@@ -28,6 +28,7 @@
     // not declaration path aliases, keep each package/vendor source compiled
     // under its own tsconfig boundary.
     "paths": {
+      "@cuteafd/dsh-admin": ["./packages/cuteafd/admin/src/index.ts"],
       "@cuteafd/dsh-execution-worlds": ["./packages/cuteafd/execution-worlds/src/index.ts"],
       "@deepseek-ai/dsh-experimental-session-search": ["./packages/experimental/session-search/src/index.ts"],
       "@deepseek-ai/dsh-experimental-ralph-bundle": ["./packages/experimental/ralph-bundle/src/index.ts"],

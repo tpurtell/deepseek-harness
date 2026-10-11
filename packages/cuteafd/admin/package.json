@@ -1,0 +1,16 @@
+{
+  "name": "@cuteafd/dsh-admin",
+  "version": "0.2.1-alpha.2",
+  "private": true,
+  "type": "module",
+  "main": "lib/index.js",
+  "types": "lib/types/index.d.ts",
+  "bin": { "dsh-cuteafd": "lib/index.js" },
+  "exports": { ".": { "types": "./lib/types/index.d.ts", "default": "./lib/index.js" }, "./src/*": "./src/*" },
+  "license": "MIT",
+  "dependencies": {
+    "@deepseek-ai/cordis": "workspace:~",
+    "@deepseek-ai/dsh-credentials": "workspace:*",
+    "@deepseek-ai/dsh-credentials-local": "workspace:*"
+  }
+}
