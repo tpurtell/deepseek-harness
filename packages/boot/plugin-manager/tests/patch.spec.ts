@@ -28,6 +28,20 @@ it('removes an inserted row only when its name assertion matches', () => {
   expect(result).toEqual([])
 })
 
+it('patches preset-local plugin IDs without touching another preset or host row', () => {
+  const plugin = { id: 'local', name: 'unsafe' }
+  const input = [
+    { id: 'standard', name: '@deepseek-ai/dsh-agent-preset', config: { plugins: [plugin] } },
+    { id: 'other', name: '@deepseek-ai/dsh-agent-preset', config: { plugins: [plugin] } },
+    plugin,
+  ]
+  const result = applyEntryPatches(input, [{ id: 'standard', pluginPatches: [{ id: 'local', remove: true }] }], () => {})
+  expect(result[0]?.config.plugins).toEqual([])
+  expect(result[1]?.config.plugins).toEqual([plugin])
+  expect(result[2]).toEqual(plugin)
+  expect(input[0]?.config.plugins).toEqual([plugin])
+})
+
 const TOOL = { id: 'tool', name: 'package' }
 
 /** Create a profile whose patch file holds `text` (none when omitted) and whose one selected bundle inserts `rows`. */

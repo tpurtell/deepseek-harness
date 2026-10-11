@@ -1,0 +1,10 @@
+{
+  "name": "@cuteafd/dsh-remote-app",
+  "version": "0.2.1-alpha.2",
+  "private": true,
+  "type": "module",
+  "license": "MIT",
+  "exports": { "./cordis.patch.yml": "./cordis.patch.yml", "./package.json": "./package.json" },
+  "dsh": { "bundle": { "patch": ["./cordis.patch.yml"] } },
+  "dependencies": { "@cuteafd/dsh-execution-worlds": "workspace:*" }
+}

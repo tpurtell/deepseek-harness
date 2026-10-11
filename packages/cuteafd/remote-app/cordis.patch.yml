@@ -1,0 +1,36 @@
+# No local execution providers remain in this profile, even disabled ones.
+- id: subprocess
+  remove: true
+- id: sandbox
+  remove: true
+- id: fs-sandbox
+  remove: true
+- id: bash-sandbox
+  remove: true
+- id: pwsh-sandbox
+  remove: true
+- id: ptc-runtime
+  remove: true
+- id: workspace-changes
+  remove: true
+- id: skill-filesystem
+  remove: true
+- id: tool-plugin-manager
+  remove: true
+- id: preset-cordis
+  remove: true
+- id: preset-standard
+  pluginPatches:
+    - id: skill-filesystem
+      remove: true
+    - id: tool-plugin-manager
+      remove: true
+- id: preset-ptc
+  pluginPatches:
+    - id: skill-filesystem
+      remove: true
+    - id: tool-plugin-manager
+      remove: true
+- insert:
+    - id: cuteafd-execution-worlds
+      name: '@cuteafd/dsh-execution-worlds'

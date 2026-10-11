@@ -7494,6 +7494,12 @@ importers:
         specifier: workspace:*
         version: link:../../core/tools
 
+  packages/cuteafd/remote-app:
+    dependencies:
+      '@cuteafd/dsh-execution-worlds':
+        specifier: workspace:*
+        version: link:../execution-worlds
+
   packages/deliverables/tool-present:
     dependencies:
       '@deepseek-ai/schemastery':

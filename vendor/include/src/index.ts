@@ -74,7 +74,7 @@ export function applyEntryPatches(
   buildMap(data)
 
   for (const patch of patches) {
-    const { id, insert, name, remove, ...overrides } = patch
+    const { id, insert, name, remove, pluginPatches, ...overrides } = patch
 
     if (insert) {
       if (id) {
@@ -133,6 +133,14 @@ export function applyEntryPatches(
       continue
     }
 
+    if (pluginPatches !== undefined) {
+      if (target.name !== '@deepseek-ai/dsh-agent-preset' || !Array.isArray(target.config?.plugins)) {
+        warn('patch: entry %C is not an agent preset', id)
+        continue
+      }
+      target.config.plugins = applyEntryPatches(target.config.plugins, pluginPatches, warn)
+    }
+
     for (const [key, value] of Object.entries(overrides)) {
       if (key === 'id') continue
       target[key] = value
@@ -148,6 +156,8 @@ export interface PatchOptions {
   insert?: EntryOptions[]
   /** Structurally remove a row and its entire subtree, not merely disable it. */
   remove?: boolean
+  /** Explicitly patch one preset's plugin list, whose IDs are local to that preset. */
+  pluginPatches?: PatchOptions[]
   name?: string
   config?: any
   group?: boolean | null
