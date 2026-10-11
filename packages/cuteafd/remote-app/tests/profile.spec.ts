@@ -47,7 +47,7 @@ it('removes local execution and creator/model-install rows but retains operator 
   expect(permission?.config.presets['workspace-write']).toEqual({ sandbox: 'workspace-write', approval: 'ask' })
 })
 
-it('boots all production plugins, constructs every preset SSH world with declared dependencies, and disposes them', async () => {
+it('boots production plugins and exercises every preset capability through stock caller contexts before disposal', async () => {
   const result = await promisify(execFile)(process.execPath,
     [resolve(import.meta.dirname, 'production-lifecycle.mjs')],
     { cwd: root, timeout: 120_000, maxBuffer: 1024 * 1024 })
