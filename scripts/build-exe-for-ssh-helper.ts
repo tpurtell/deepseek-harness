@@ -154,7 +154,7 @@ export async function buildSshHelper(argv: string[]): Promise<void> {
     const { rgPath } = require('@vscode/ripgrep') as { rgPath: string }
     await copyFile(rgPath, `${executable}-rg`)
     await chmod(`${executable}-rg`, 0o755)
-    const ripgrepRoot = dirname(require.resolve('@vscode/ripgrep/package.json'))
+    const ripgrepRoot = resolve(dirname(require.resolve('@vscode/ripgrep')), '..')
     const ripgrepLicenses = join(product, 'LICENSES', 'ripgrep')
     await mkdir(ripgrepLicenses, { recursive: true })
     for (const name of (await readdir(ripgrepRoot)).filter(name => /^(?:licen[cs]e|notice)(?:[.-]|$)/iu.test(name))) {
