@@ -27,7 +27,7 @@ import type { FsDirEntry, FsInfo, FsPathInfo, FsTarget } from '@deepseek-ai/dsh-
 import type {} from '@deepseek-ai/dsh-sandbox-policy'
 import type {} from '@deepseek-ai/dsh-session'
 import type {} from '@deepseek-ai/dsh-session-persistence'
-import type { SessionId } from '@deepseek-ai/dsh-session/types'
+import type { SessionHeader, SessionId } from '@deepseek-ai/dsh-session/types'
 import { Remote, RemoteError, TypertRemoteService, type TypertLookup } from '@deepseek-ai/dsh-typert-protocol'
 import { WorkspaceChangeFeed } from './changes.ts'
 import type {
@@ -55,6 +55,8 @@ declare module '@deepseek-ai/cordis' {
 export interface WorkspaceFileScope {
   /** Session identity received on the wire. */
   readonly sessionId: SessionId
+  /** Deployment routing identity, never a container path. */
+  readonly executionHeader?: SessionHeader
   /** Session workspace root, or the deployment fallback when its header has no cwd. */
   readonly workspaceRoot: string
 }
@@ -215,6 +217,7 @@ export class WorkspaceFiles extends TypertRemoteService {
           if (header === undefined) return undefined
           return {
             sessionId,
+            executionHeader: header,
             workspaceRoot: header.cwd ?? scope.sandboxPolicy.workspaceRoot,
           }
         },

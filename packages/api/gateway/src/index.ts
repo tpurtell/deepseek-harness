@@ -82,6 +82,13 @@ export type {
 } from './types.ts'
 export type { RemoteEventHostInfo } from './stream-protocol.ts'
 
+declare module '@deepseek-ai/cordis' {
+  interface Events {
+    /** Deployment boundary around Remote invocation and each stream continuation. */
+    'gateway/execute'(args: readonly unknown[], next: () => unknown): unknown
+  }
+}
+
 interface GatewayErrorOptions {
   readonly cause?: unknown
   readonly field?: string
@@ -418,7 +425,8 @@ export class TypertGatewayService extends Service implements TypertGateway {
     }
 
     try {
-      return await Reflect.apply(prepared.method, prepared.receiver, prepared.args) as unknown
+      return await this.ctx.waterfall('gateway/execute', prepared.args.filter((_value, index) => prepared.descriptor.parameters[index]?.source === 'lookup'),
+        async () => await Reflect.apply(prepared.method, prepared.receiver, prepared.args) as unknown)
     } catch (error) {
       if (prepared.invocation.signal.aborted) throw remoteCancelled(prepared.endpoint, error)
       throw error
@@ -453,7 +461,8 @@ export class TypertGatewayService extends Service implements TypertGateway {
     }
     let source: unknown
     try {
-      source = Reflect.apply(prepared.method, prepared.receiver, prepared.args) as unknown
+      source = await this.ctx.waterfall('gateway/execute', prepared.args.filter((_value, index) => prepared.descriptor.parameters[index]?.source === 'lookup'),
+        async () => await Reflect.apply(prepared.method, prepared.receiver, prepared.args) as unknown)
     } catch (error) {
       await prepared.invocation.close()
       if (prepared.invocation.signal.aborted) throw remoteCancelled(prepared.endpoint, error)
@@ -468,7 +477,18 @@ export class TypertGatewayService extends Service implements TypertGateway {
         { field: 'result' },
       )
     }
-    return cancellableStream(source, prepared.endpoint, prepared.invocation)
+    const iterator = Symbol.asyncIterator in source ? source[Symbol.asyncIterator]() : source[Symbol.iterator]()
+    const ctx = this.ctx
+    const scoped: AsyncIterable<unknown> = {
+      [Symbol.asyncIterator]() {
+        return {
+          next: () => Promise.resolve(ctx.waterfall('gateway/execute', prepared.args.filter((_value, index) => prepared.descriptor.parameters[index]?.source === 'lookup'), () => iterator.next()) as IteratorResult<unknown> | Promise<IteratorResult<unknown>>),
+          return: () => Promise.resolve(ctx.waterfall('gateway/execute', prepared.args.filter((_value, index) => prepared.descriptor.parameters[index]?.source === 'lookup'),
+            () => iterator.return?.() ?? { done: true, value: undefined }) as IteratorResult<unknown> | Promise<IteratorResult<unknown>>),
+        }
+      },
+    }
+    return cancellableStream(scoped, prepared.endpoint, prepared.invocation)
   }
 
   private async dispatchRpc(
