@@ -1,6 +1,8 @@
 /** Browser-session authentication for the Host Connection carrier. */
 
 import { createHash, createHmac, randomBytes, timingSafeEqual } from 'node:crypto'
+import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
+import { dirname } from 'node:path'
 import { credentialKey } from '@deepseek-ai/dsh-credentials'
 import type { CredentialProvider, CredentialRecord } from '@deepseek-ai/dsh-credentials'
 import type {
@@ -221,6 +223,25 @@ export class BrowserAuth {
     maxAgeDays: number,
   ): Promise<BrowserAuth> {
     return new BrowserAuth(processOwner, await initializeSecret(credentials), maxAgeDays)
+  }
+
+  /** Publish the process token privately for a trusted same-host reverse proxy. */
+  async publishLaunchToken(path: string): Promise<() => Promise<void>> {
+    if (!path.startsWith('/') || /[\r\n\0]/u.test(path)) throw new Error('client-connection: launch token file requires an absolute path')
+    await mkdir(dirname(path), { recursive: true, mode: 0o700 })
+    const temporary = `${path}.${randomBytes(12).toString('hex')}`
+    const content = `${this.launchToken}\n`
+    try {
+      await writeFile(temporary, content, { mode: 0o600, flag: 'wx' })
+      await rename(temporary, path)
+    } finally { await rm(temporary, { force: true }) }
+    return async () => {
+      try {
+        if (await readFile(path, 'utf8') === content) await rm(path, { force: true })
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+      }
+    }
   }
 
   /**

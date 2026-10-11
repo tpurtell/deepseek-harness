@@ -1,3 +1,10 @@
+- id: web-runtime
+  config:
+    openBrowser: false
+    printUrl: false
+- id: connection
+  config:
+    launchTokenFile: /agent/dsh/launch-token
 # No local execution providers remain in this profile, even disabled ones.
 - id: subprocess
   remove: true
@@ -12,6 +19,8 @@
 - id: ptc-runtime
   remove: true
 - id: workspace-changes
+  remove: true
+- id: directory-picker
   remove: true
 - id: skill-filesystem
   remove: true
@@ -34,3 +43,9 @@
 - insert:
     - id: cuteafd-execution-worlds
       name: '@cuteafd/dsh-execution-worlds'
+    - id: cuteafd-hosts
+      name: '@cuteafd/dsh-hosts'
+      config:
+        helperRoot: /opt/dsh/helpers
+    - id: cuteafd-ui-hosts
+      name: '@cuteafd/dsh-ui-hosts'

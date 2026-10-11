@@ -6,5 +6,5 @@
   "license": "MIT",
   "exports": { "./cordis.patch.yml": "./cordis.patch.yml", "./package.json": "./package.json" },
   "dsh": { "bundle": { "patch": ["./cordis.patch.yml"] } },
-  "dependencies": { "@cuteafd/dsh-execution-worlds": "workspace:*" }
+  "dependencies": { "@cuteafd/dsh-execution-worlds": "workspace:*", "@cuteafd/dsh-hosts": "workspace:*", "@cuteafd/dsh-ui-hosts": "workspace:*" }
 }
