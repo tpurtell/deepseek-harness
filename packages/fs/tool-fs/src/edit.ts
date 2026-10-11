@@ -117,11 +117,12 @@ export function applyEditTool(ctx: Context, sandbox: FsSandboxController): void 
       }),
     },
     async execute(args: EditToolArgs, exec) {
+      const executionCtx = exec.agent?.executionCtx ?? ctx
       const input = parseEditArgs(args)
       // Resolve the per-call sandbox policy (approved mode > session override
       // > backend default, plus the session cwd root) BEFORE anything executes.
       const sandboxPolicy = await sandbox.resolvePolicy('edit', args, exec)
-      const target = await ctx.fs.resolve(input.filePath, await sessionResolveOptions(ctx, exec))
+      const target = await executionCtx.fs.resolve(input.filePath, await sessionResolveOptions(executionCtx, exec))
       // Single-slot decision: the policy plugin returns { version: vObserved } or
       // throws FS_NOT_OBSERVED; the bare default is undefined (unconditional edit).
       // No stat — the bare default never manufactures a version basis. The intent
@@ -130,8 +131,8 @@ export function applyEditTool(ctx: Context, sandbox: FsSandboxController): void 
       // failure get the model-facing remedy below.
       let outcome
       try {
-        const intent = await ctx.waterfall('fs/edit-intent', target, exec, () => undefined)
-        outcome = await ctx.fs.editText(
+        const intent = await executionCtx.waterfall('fs/edit-intent', target, exec, () => undefined)
+        outcome = await executionCtx.fs.editText(
           target,
           { oldString: input.oldString, newString: input.newString, replaceAll: input.replaceAll },
           intent,
@@ -144,7 +145,7 @@ export function applyEditTool(ctx: Context, sandbox: FsSandboxController): void 
         // stable model-facing diagnostic; anything else passes through.
         throw remediateFsError(sandbox.mapError(error, sandboxPolicy), target.displayPath)
       }
-      return mutationResult(ctx, target, outcome, exec)
+      return mutationResult(executionCtx, target, outcome, exec)
     },
     // Pure display: a diff card of the literal replacement (old_string → new_string), derived
     // from the call args. `oldText: old_string || null` matches claude-agent-acp's Edit arm;
