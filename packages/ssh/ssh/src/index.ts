@@ -251,7 +251,8 @@ export class SshConnection extends Service {
     const combined = AbortSignal.any(signals)
     combined.throwIfAborted()
     const result = Promise.withResolvers<undefined>()
-    const command = execFile('ssh', [...this.configArguments(), '-S', this.controlPath(), ...args, this.config.host], {
+    // The generated config clears ambient forwards; allow only this explicit stream reservation.
+    const command = execFile('ssh', [...this.configArguments(), '-o', 'ClearAllForwardings=no', '-S', this.controlPath(), ...args, this.config.host], {
       signal: combined, maxBuffer: 64 * 1024,
     }, (error) => { if (error === null) result.resolve(undefined); else result.reject(error) })
     const closed = new Promise<void>((resolve) => { command.once('close', () => { resolve() }) })

@@ -137,7 +137,8 @@ describe.skipIf(process.platform === 'win32')('SSH connection startup', () => {
     await test.service.ready
     expect(transport.spawn.mock.calls[0]?.[1].slice(0, 2)).toEqual(['-F', '/agent/.ssh/ssh_config'])
     const socket = await test.service.connectStream({ path: '/tmp/remote-helper/stream', capability: 'a'.repeat(64) } as never)
-    expect(transport.exec.mock.calls[0]?.[1].slice(0, 2)).toEqual(['-F', '/agent/.ssh/ssh_config'])
+    expect(transport.exec.mock.calls[0]?.[1].slice(0, 4)).toEqual(['-F', '/agent/.ssh/ssh_config', '-o', 'ClearAllForwardings=no'])
+    expect(transport.spawn.mock.calls[0]?.[1]).toContain('ClearAllForwardings=yes')
     socket.destroy()
   })
 

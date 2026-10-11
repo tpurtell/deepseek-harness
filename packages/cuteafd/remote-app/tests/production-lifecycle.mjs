@@ -59,6 +59,9 @@ try {
         server?.close();
       } else {
         assert.equal(action, 'forward');
+        // Let OpenSSH parse the actual generated config instead of trusting the stub's argv handling.
+        const parsed = (await exec('ssh', ['-G', ...args], { timeout: 10_000 })).stdout;
+        assert(parsed.split('\n').includes(`localforward ${local} ${remote}`), 'OpenSSH must retain the explicit stream forward');
         const server = createServer({ allowHalfOpen: true }, socket => {
           const upstream = createConnection({ path: remote, allowHalfOpen: true });
           for (const peer of [socket, upstream]) {
@@ -204,6 +207,12 @@ try {
       if (preset !== 'ptc' && names.includes('bash')) {
         const bash = await call('bash', { command: 'printf stock-tool-shell', description: 'Exercise production shell policy' });
         assert(!bash.isError && JSON.stringify(bash).includes('stock-tool-shell'), JSON.stringify(bash));
+        if (preset === 'standard') {
+          const background = await call('bash', { command: 'printf stock-background-forward', description: 'Exercise forwarded background shell', run_in_background: true });
+          assert(!background.isError && background.value?.jobId, JSON.stringify(background));
+          const output = await call('job_output', { job_id: background.value.jobId, wait: true, timeout_ms: 10_000 });
+          assert(!output.isError && JSON.stringify(output).includes('stock-background-forward'), JSON.stringify(output));
+        }
       }
       if (names.includes('run_code')) {
         const code = await call('run_code', { code: 'return 6 * 7', description: 'Exercise production PTC policy' });
