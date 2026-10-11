@@ -3,6 +3,7 @@ import { spawn } from 'node:child_process'
 import { existsSync, globSync } from 'node:fs'
 import { chmod, copyFile, cp, lstat, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { basename, dirname, join, resolve } from 'node:path'
+import { createRequire } from 'node:module'
 import { parseArgs } from 'node:util'
 import { build } from 'tsdown'
 import { create as createTar } from 'tar'
@@ -149,6 +150,16 @@ export async function buildSshHelper(argv: string[]): Promise<void> {
     const executable = join(product, 'dsh-ssh-helper')
     await pnpm('exec', 'pkg', staging, '--sea', '--targets', target, '--output', executable)
     await chmod(executable, 0o755)
+    const require = createRequire(join(root, 'packages/fs/tool-fs-search/package.json'))
+    const { rgPath } = require('@vscode/ripgrep') as { rgPath: string }
+    await copyFile(rgPath, `${executable}-rg`)
+    await chmod(`${executable}-rg`, 0o755)
+    const ripgrepRoot = dirname(require.resolve('@vscode/ripgrep/package.json'))
+    const ripgrepLicenses = join(product, 'LICENSES', 'ripgrep')
+    await mkdir(ripgrepLicenses, { recursive: true })
+    for (const name of (await readdir(ripgrepRoot)).filter(name => /^(?:licen[cs]e|notice)(?:[.-]|$)/iu.test(name))) {
+      await copyFile(join(ripgrepRoot, name), join(ripgrepLicenses, name))
+    }
     await verifyNativePayload(product, target)
     await copyLicenses(staging, product)
     const hello = await probeHelper(executable, product)

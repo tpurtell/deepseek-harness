@@ -11,7 +11,7 @@
  */
 
 import { provideWorkingDirectoryFixture } from '@deepseek-ai/dsh-agent-loop-testkit'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import { createScope, type Scope } from '@deepseek-ai/dsh-scope'
 import { join, sep } from 'node:path'
@@ -421,6 +421,27 @@ describe('workdir derivation and signal forwarding', () => {
     expect((spec?.stdio.stdout as { maxBytes: number }).maxBytes).toBe(1234)
     expect((spec?.stdio.stderr as { maxBytes: number }).maxBytes).toBe(4096)
     expect(spec?.graceMs).toBe(5_000)
+  })
+
+  it('resolves ripgrep through the selected subprocess world in remote-only mode', async () => {
+    const { ctx, subprocess } = await setup()
+    const resolveExecutable = vi.spyOn(subprocess, 'resolveExecutable').mockResolvedValue('/remote/helper-rg')
+    const previous = process.env.DSH_REMOTE_ONLY
+    process.env.DSH_REMOTE_ONLY = '1'
+    try {
+      subprocess.handler = () => runResult('', { exitCode: 1 })
+      await call(ctx, 'grep', { pattern: 'needle' })
+      expect(resolveExecutable).toHaveBeenCalledWith('rg', undefined, expect.any(AbortSignal))
+      expect(subprocess.spawns[0]?.argv[0]).toBe('/remote/helper-rg')
+      resolveExecutable.mockRejectedValueOnce(new Error('host unreachable'))
+      const result = await call(ctx, 'grep', { pattern: 'needle' })
+      expect(result.isError).toBe(true)
+      expect(subprocess.spawns).toHaveLength(1)
+    } finally {
+      if (previous === undefined) Reflect.deleteProperty(process.env, 'DSH_REMOTE_ONLY')
+      else process.env.DSH_REMOTE_ONLY = previous
+      resolveExecutable.mockRestore()
+    }
   })
 
   it('defaults the stderr tail budget and grace period when the config omits them', async () => {
