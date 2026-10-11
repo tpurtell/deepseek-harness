@@ -4,7 +4,7 @@ import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import { chmod, link, mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
-import { join, resolve } from 'node:path'
+import { join, posix, resolve } from 'node:path'
 import { Context, Service } from '@deepseek-ai/cordis'
 import schema from '@deepseek-ai/schemastery'
 import { z } from 'zod'
@@ -13,6 +13,8 @@ import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import { sshWorldFactory } from '@cuteafd/dsh-execution-worlds'
 import type {} from '@cuteafd/dsh-execution-worlds'
 import type {} from '@deepseek-ai/dsh-workspace'
+import { SessionId, SESSION_FORMAT_VERSION } from '@deepseek-ai/dsh-session'
+import type { DirectoryListing } from '@deepseek-ai/dsh-host-directory-picker/types'
 
 const exec = promisify(execFile)
 const aliasSchema = z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9_.-]*$/u)
@@ -22,9 +24,9 @@ const hostSchema = z.object({
   user: z.string().regex(/^[a-zA-Z0-9_][a-zA-Z0-9_.-]*$/u),
   port: z.number().int().min(1).max(65535),
 }).strict()
-export type HostSpec = z.infer<typeof hostSchema>
+import type { HostSpec, HostView } from './types.ts'
+export type { HostSpec, HostView } from './types.ts'
 interface HostRecord extends HostSpec { knownHosts: string; helper?: string | undefined; helperHash?: string | undefined }
-export interface HostView extends HostSpec { confirmed: boolean }
 export interface Config { home?: string; helperRoot: string }
 export type Runner = (command: string, args: readonly string[], input?: string | Uint8Array) => Promise<string>
 
@@ -182,6 +184,33 @@ export class Hosts extends Service {
     })
   }
 
+  async listDirectory(host: string, path?: string): Promise<DirectoryListing> {
+    this.record(host)
+    const home = (await this.ssh(host, 'printf "%s" "$HOME"')).trim()
+    if (!home.startsWith('/') || /[\r\n\0]/u.test(home)) throw new Error('invalid remote home')
+    const canonical = await this.canonical(host, path ?? home)
+    const world = await sshWorldFactory(this.ctx, alias => this.configuration(alias))(
+      { kind: 'cuteafd-ssh', host, path: canonical },
+      { version: SESSION_FORMAT_VERSION, id: SessionId(`picker-${randomUUID()}`), createdAt: Date.now(), isSeeded: false, cwd: canonical, cuteafd_workspace: { kind: 'cuteafd-ssh', host, path: canonical } },
+    )
+    try {
+      const target = await world.fs.resolve(canonical)
+      const children = (await world.fs.listDir(target)).filter(entry => entry.type === 'directory').sort((a, b) => a.name.localeCompare(b.name))
+      const crumbs = [{ name: '/', path: '/', hidden: false }]
+      let ancestor = '/'
+      for (const name of canonical.split('/').filter(Boolean)) { ancestor = posix.join(ancestor, name); crumbs.push({ name, path: ancestor, hidden: false }) }
+      return { path: canonical, home, crumbs, entries: children.slice(0, 1000).map(entry => ({ name: entry.name, path: world.fs.processPath(entry.target), hidden: entry.name.startsWith('.') })), truncated: children.length > 1000 }
+    } finally { await world.dispose?.() }
+  }
+
+  async createDirectory(host: string, path: string, name: string): Promise<string> {
+    if (name.trim() === '' || name === '.' || name === '..' || /[/\\\r\n\0]/u.test(name)) throw new Error('directory name requires one nonblank segment')
+    const parent = await this.canonical(host, path)
+    const child = posix.join(parent, name)
+    await this.ssh(host, `mkdir -- ${quote(child)}`)
+    return await this.canonical(host, child)
+  }
+
   async canonical(host: string, path: string): Promise<string> {
     this.record(host)
     if (!path.startsWith('/') || /[\r\n\0]/u.test(path)) throw new Error('remote directory requires an absolute path')
@@ -234,6 +263,10 @@ export class HostsController extends TypertRemoteService {
   confirm(confirmation: string, fingerprint: string, privateKey?: string): Promise<{ host: HostView; publicKey: string }> { return this.ctx.cuteafdHosts.confirm(confirmation, fingerprint, privateKey) }
   @Remote('probe')
   probe(alias: string): Promise<{ platform: string; machine: string; libc: string }> { return this.ctx.cuteafdHosts.probe(alias) }
+  @Remote('listDirectory')
+  listDirectory(host: string, path?: string): Promise<DirectoryListing> { return this.ctx.cuteafdHosts.listDirectory(host, path) }
+  @Remote('createDirectory')
+  createDirectory(host: string, path: string, name: string): Promise<string> { return this.ctx.cuteafdHosts.createDirectory(host, path, name) }
 }
 
 export const name = 'cuteafd-hosts'

@@ -1,0 +1,9 @@
+.cuteafd-hosts { display: grid; gap: 12px; max-width: 760px; }
+.cuteafd-hosts form { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; }
+.cuteafd-hosts label { display: grid; gap: 6px; }
+.cuteafd-hosts input, .cuteafd-hosts textarea, .cuteafd-hosts select { background: var(--dsw-alias-bg-base, transparent); color: inherit; border: 1px solid var(--dsw-alias-border-base, currentColor); border-radius: 6px; padding: 8px; width: 100%; min-width: 0; box-sizing: border-box; }
+.cuteafd-hosts textarea { min-height: 96px; }
+.cuteafd-hosts pre, .cuteafd-hosts code { white-space: pre-wrap; overflow-wrap: anywhere; }
+.cuteafd-hosts ul { padding-left: 20px; }
+.cuteafd-hosts nav { display: flex; flex-wrap: wrap; gap: 6px; }
+.cuteafd-host-confirm { border: 1px solid currentColor; border-radius: 8px; padding: 12px; }
