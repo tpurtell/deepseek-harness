@@ -5,6 +5,8 @@ import type { Agent } from '@deepseek-ai/dsh-agent'
 import { FileSystem } from '@deepseek-ai/dsh-fs'
 import { SubprocessRuntime } from '@deepseek-ai/dsh-subprocess'
 import { SandboxProvider } from '@deepseek-ai/dsh-sandbox'
+import { ShellExecutor } from '@deepseek-ai/dsh-shell'
+import { PtcRuntime } from '@deepseek-ai/dsh-ptc-runtime'
 import type { SessionHeader, SessionId } from '@deepseek-ai/dsh-session'
 import type {} from '@deepseek-ai/dsh-tools'
 import type {} from '@deepseek-ai/dsh-api-gateway'
@@ -16,6 +18,8 @@ export interface ExecutionWorld {
   readonly fs: FileSystem
   readonly subprocess: SubprocessRuntime
   readonly sandbox: SandboxProvider
+  readonly shell?: ShellExecutor
+  readonly ptcRuntime?: PtcRuntime
   readonly dispose?: () => Promise<void>
 }
 
@@ -184,10 +188,40 @@ export class WorldSandbox extends SandboxProvider {
   override confine(...args: Parameters<SandboxProvider['confine']>) { return this.ctx.executionWorlds.current().sandbox.confine(...args) }
 }
 
+export class WorldShell extends ShellExecutor {
+  static inject = ['executionWorlds', 'sandboxPolicy']
+  private get backend(): ShellExecutor {
+    const shell = this.ctx.executionWorlds.current().shell
+    if (shell === undefined) throw new Error('remote shell unavailable; no local fallback')
+    return shell
+  }
+  override get sandboxMode() { return this.ctx.sandboxPolicy.defaultMode }
+  override resolve(...args: Parameters<ShellExecutor['resolve']>) { return this.backend.resolve(...args) }
+  override execute(...args: Parameters<ShellExecutor['execute']>) { return this.backend.execute(...args) }
+}
+
+export class WorldPtcRuntime extends PtcRuntime {
+  static inject = ['executionWorlds', 'sandboxPolicy']
+  readonly language = 'typescript'
+  readonly isolation = 'process'
+  override get executionInstructions() { return 'Each call runs in a fresh process on the session SSH host, under the session sandbox policy.' }
+  override get sandboxMode() { return this.ctx.sandboxPolicy.defaultMode }
+  override get timeout() { return { defaultMs: 120_000, maxMs: 600_000 } }
+  private get backend(): PtcRuntime {
+    const runtime = this.ctx.executionWorlds.current().ptcRuntime
+    if (runtime === undefined) throw new Error('remote PTC runtime unavailable; no local fallback')
+    return runtime
+  }
+  override resolve(...args: Parameters<PtcRuntime['resolve']>) { return this.backend.resolve(...args) }
+  override run(...args: Parameters<PtcRuntime['run']>) { return this.backend.run(...args) }
+}
+
 export const name = 'cuteafd-execution-worlds'
 export async function apply(ctx: Context): Promise<void> {
   await ctx.plugin(ExecutionWorlds)
   await ctx.plugin(WorldFileSystem)
   await ctx.plugin(WorldSubprocess)
   await ctx.plugin(WorldSandbox)
+  await ctx.plugin(WorldShell)
+  await ctx.plugin(WorldPtcRuntime)
 }
