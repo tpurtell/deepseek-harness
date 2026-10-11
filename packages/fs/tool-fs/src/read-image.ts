@@ -238,6 +238,7 @@ export function applyReadImageTool(ctx: Context): void {
     // of the same file cannot conflict.
     isConcurrencySafe: () => true,
     async execute(args, exec) {
+      const executionCtx = exec.agent?.executionCtx ?? ctx
       if (args.file_path.trim().length === 0) throw new Error('file_path must be a non-empty string')
 
       // Every pre-read gate runs before any filesystem I/O so a refusal never
@@ -249,19 +250,19 @@ export function applyReadImageTool(ctx: Context): void {
       if (declared === undefined && extension !== '') {
         throw new Error(`cannot read "${args.file_path}": the ${extension} extension does not declare a supported image format; read_image accepts PNG/JPEG/WebP/GIF files, including extension-less files in those formats`)
       }
-      const attachments = ctx.get('attachments')
+      const attachments = executionCtx.get('attachments')
       if (attachments === undefined) {
         throw new Error(`cannot read "${args.file_path}" as an image: no attachment service is mounted`)
       }
       if (declared !== undefined) assertDeploymentAccepts(attachments, declared, args.file_path)
-      await assertImageCapableRoute(ctx, exec, args.file_path)
+      await assertImageCapableRoute(executionCtx, exec, args.file_path)
 
-      const { target, info } = await resolveRegularReadTarget(ctx, exec, args.file_path)
+      const { target, info } = await resolveRegularReadTarget(executionCtx, exec, args.file_path)
 
       // The tool result is one message carrying one image, so the per-message
       // aggregate bound applies beside the per-image bound.
       const byteCap = Math.min(attachments.imageLimits.maxImageBytes, attachments.imageLimits.maxMessageImageBytes)
-      const data = await ctx.fs.readBytes(target, exec.signal, byteCap)
+      const data = await executionCtx.fs.readBytes(target, exec.signal, byteCap)
       const mediaType = declared ?? sniffImageMediaType(data)
       if (mediaType === undefined) {
         throw new Error(`cannot read "${target.displayPath}": the file content is not a supported image format; read_image accepts PNG/JPEG/WebP/GIF`)
@@ -319,9 +320,9 @@ export function applyReadImageTool(ctx: Context): void {
           { cause: error },
         )
       }
-      ctx.emit('fs/observed', target, { kind: 'present', version: info.version }, exec)
+      executionCtx.emit('fs/observed', target, { kind: 'present', version: info.version }, exec)
       const value: ImageReadValue = {
-        path: ctx.fs.processPath(target),
+        path: executionCtx.fs.processPath(target),
         image: {
           attachmentId: ref.attachmentId,
           mediaType: ref.mediaType,
