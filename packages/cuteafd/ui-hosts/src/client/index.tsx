@@ -110,7 +110,9 @@ export const inject = ['remote', 'slots']
 export async function apply(ctx: Context): Promise<void> {
   const unmount = await ctx.remote.$mount(remote)
   ctx.effect(() => unmount, 'cuteafd-hosts: Remote contribution')
-  const api = ctx.remote.cuteafdHosts
+  // This plugin mounts its own namespace; injecting it upfront would deadlock activation.
+  const api = ctx.get('remote.cuteafdHosts')
+  if (api === undefined) throw new Error('SSH host Remote namespace did not mount')
   ctx.slots.inject('plugins.item', () => ctx.slots.register({ name: 'plugins.item', id: 'cuteafd-hosts', order: 35, label: () => 'SSH hosts', inject: () => ({ api }) }, HostCard))
   ctx.slots.inject('conversation.hero.workspace.directoryFlow', () => ctx.slots.inject('sidebar.workspaces.directoryFlow', function* () {
     yield ctx.slots.register({ name: 'conversation.hero.workspace.directoryFlow', inject: () => ({ api }) }, HostDirectoryFlow)

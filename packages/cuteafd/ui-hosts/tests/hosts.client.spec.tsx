@@ -1,7 +1,9 @@
 // @vitest-environment jsdom
 import { afterEach, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
-import { HostCard, HostDirectoryFlow } from '../src/client/index.tsx'
+import { Context } from '@deepseek-ai/cordis'
+import { SlotRegistry } from '@deepseek-ai/dsh-client-ui-renderer/client'
+import { apply, inject, HostCard, HostDirectoryFlow } from '../src/client/index.tsx'
 
 vi.mock('@cuteafd/dsh-hosts/remote', () => ({ default: {} }))
 afterEach(cleanup)
@@ -20,6 +22,25 @@ function fixture() {
   const props = { api: api as never, open: true, busy: false, onPicked: vi.fn(), onCancel: vi.fn(), onError: vi.fn() }
   return { api, props }
 }
+
+it('activates with a self-mounted Remote namespace and disposes it with the browser fiber', async () => {
+  const ctx = new Context()
+  const { api } = fixture()
+  await ctx.plugin(SlotRegistry).await()
+  const unmount = vi.fn()
+  ctx.provide('remote', { $mount: vi.fn(async () => {
+    const dispose = ctx.reflect.provide('remote.cuteafdHosts', api)
+    return () => { unmount(); dispose() }
+  }) } as never)
+  const fiber = ctx.plugin({ inject, apply })
+  try {
+    await fiber.await()
+    expect(ctx.get('remote.cuteafdHosts')).toBeDefined()
+    await fiber.dispose()
+    expect(unmount).toHaveBeenCalledOnce()
+    expect(ctx.get('remote.cuteafdHosts')).toBeUndefined()
+  } finally { await ctx.fiber.dispose() }
+})
 
 it('requires a host before browsing and propagates its identity on commit', async () => {
   const { api, props } = fixture()
