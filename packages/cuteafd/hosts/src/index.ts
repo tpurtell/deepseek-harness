@@ -12,6 +12,7 @@ import type { Config as SshConfig } from '@deepseek-ai/dsh-ssh'
 import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import { sshWorldFactory } from '@cuteafd/dsh-execution-worlds'
 import type {} from '@cuteafd/dsh-execution-worlds'
+import type {} from '@deepseek-ai/dsh-workspace'
 
 const exec = promisify(execFile)
 const aliasSchema = z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9_.-]*$/u)
@@ -181,6 +182,22 @@ export class Hosts extends Service {
     })
   }
 
+  async canonical(host: string, path: string): Promise<string> {
+    this.record(host)
+    if (!path.startsWith('/') || /[\r\n\0]/u.test(path)) throw new Error('remote directory requires an absolute path')
+    const result = (await this.ssh(host, `bash -c ${quote(`test -d ${quote(path)} && cd -- ${quote(path)} && pwd -P`)}`)).trim()
+    if (!result.startsWith('/') || /[\r\n\0]/u.test(result)) throw new Error('invalid remote canonical directory')
+    return result
+  }
+
+  async status(host: string, path: string): Promise<'ok' | 'missing-dir'> {
+    this.record(host)
+    if (!path.startsWith('/') || /[\r\n\0]/u.test(path)) throw new Error('remote directory requires an absolute path')
+    const result = (await this.ssh(host, `if test -d ${quote(path)}; then printf ok; else printf missing-dir; fi`)).trim()
+    if (result !== 'ok' && result !== 'missing-dir') throw new Error('invalid remote directory status')
+    return result
+  }
+
   private record(alias: string): HostRecord {
     aliasSchema.parse(alias)
     const record = this.records.get(alias)
@@ -220,10 +237,11 @@ export class HostsController extends TypertRemoteService {
 }
 
 export const name = 'cuteafd-hosts'
-export const inject = ['executionWorlds']
+export const inject = ['executionWorlds', 'workspaceRegistry']
 export async function apply(ctx: Context, config: Config): Promise<void> {
   await ctx.plugin(Hosts, config)
   await ctx.plugin(HostsController)
   const hosts = ctx.get('cuteafdHosts')!
   ctx.executionWorlds.configure(sshWorldFactory(ctx, alias => hosts.configuration(alias)))
+  ctx.workspaceRegistry.configureRemote(hosts)
 }

@@ -49,6 +49,15 @@ export function defaultWorkspaceTitle(
  * @param path - The path to canonicalize.
  * @returns the canonical absolute path.
  */
+export function workspaceIdentity(path: string, host?: string): string {
+  return host === undefined ? path : JSON.stringify([host, posix.normalize(path)])
+}
+
+export function remoteWorkspacePath(path: string, host: string): string {
+  if (!/^[a-zA-Z0-9][a-zA-Z0-9_.-]*$/u.test(host) || !path.startsWith('/') || /[\r\n\0]/u.test(path)) throw new TypeError('remote workspace requires SSH alias and absolute path')
+  return posix.normalize(path)
+}
+
 export async function realpathNormalize(path: string): Promise<string> {
   if (!fullyQualifiedWorkspacePath(path)) {
     throw new TypeError(`Workspace path is not fully qualified: '${path}'`)

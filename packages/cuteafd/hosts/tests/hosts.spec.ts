@@ -109,6 +109,22 @@ it('streams a helper over strict SSH, verifies its digest, and reuses the instal
   expect(vi.mocked(runner).mock.calls.some(([command]) => command === 'scp')).toBe(false)
 })
 
+it('canonicalizes and checks directories only over a confirmed host connection', async () => {
+  const { hosts, runner } = await fixture()
+  const scanned = await hosts.scan(spec)
+  await hosts.confirm(scanned.confirmation, scanned.fingerprint)
+  vi.mocked(runner).mockResolvedValue('/remote/project\n')
+  expect(await hosts.canonical('rhea', '/remote/link')).toBe('/remote/project')
+  vi.mocked(runner).mockResolvedValue('ok')
+  expect(await hosts.status('rhea', '/remote/project')).toBe('ok')
+  vi.mocked(runner).mockResolvedValue('missing-dir')
+  expect(await hosts.status('rhea', '/remote/project')).toBe('missing-dir')
+  const calls = vi.mocked(runner).mock.calls.length
+  await expect(hosts.canonical('rhea', 'relative')).rejects.toThrow('absolute')
+  await expect(hosts.status('unknown', '/remote')).rejects.toThrow('not registered')
+  expect(vi.mocked(runner).mock.calls.length).toBe(calls)
+})
+
 it('reloads confirmed identities with private permissions and no key material in API views', async () => {
   const { hosts, home } = await fixture()
   const scanned = await hosts.scan(spec)

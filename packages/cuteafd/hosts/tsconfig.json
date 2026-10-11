@@ -7,6 +7,7 @@
     { "path": "../../../vendor/schemastery" },
     { "path": "../../typert/protocol" },
     { "path": "../../ssh/ssh" },
+    { "path": "../../workspace/workspace" },
     { "path": "../execution-worlds" }
   ]
 }

@@ -15,7 +15,7 @@ import { WorkspaceEntity } from './entity.ts'
 import type { WorkspaceEntityHost } from './entity.ts'
 
 export { WorkspaceMoveInvalidError } from './entity.ts'
-import { defaultWorkspaceTitle, fullyQualifiedWorkspacePath, realpathNormalize } from './paths.ts'
+import { defaultWorkspaceTitle, fullyQualifiedWorkspacePath, realpathNormalize, remoteWorkspacePath, workspaceIdentity } from './paths.ts'
 import { workspaceDomainSpec } from './spec.ts'
 import type { WorkspaceDomainState, WorkspaceRecord } from './spec.ts'
 import type { SessionActivity, Workspace, WorkspaceId as WorkspaceIdBrand } from './types.ts'
@@ -150,6 +150,8 @@ declare module '@deepseek-ai/cordis' {
 
 interface BootstrapGroup {
   readonly path: string
+  readonly host?: string | undefined
+  readonly identity: string
   readonly headers: SessionHeader[]
   readonly newestAt: number
 }
@@ -179,10 +181,27 @@ export class WorkspaceRegistry extends Service {
   private readonly missingSessionPaths = new Set<SessionId>()
   private readonly invalidSessionPaths = new Map<SessionId, string>()
   private operationTail: Promise<void> = Promise.resolve()
+  private remoteBackend?: { canonical(host: string, path: string): Promise<string>; status(host: string, path: string): Promise<'ok' | 'missing-dir'> }
+
+  configureRemote(backend: NonNullable<WorkspaceRegistry['remoteBackend']>): void { this.remoteBackend = backend }
+
+  private async canonical(path: string, host?: string): Promise<string> {
+    if (host !== undefined) {
+      const normalized = remoteWorkspacePath(path, host)
+      if (this.remoteBackend === undefined) throw new Error('remote workspace backend is unavailable')
+      return remoteWorkspacePath(await this.remoteBackend.canonical(host, normalized), host)
+    }
+    if (process.env.DSH_REMOTE_ONLY === '1') throw new Error('remote workspace requires a host')
+    return await realpathNormalize(path)
+  }
 
   private readonly host: WorkspaceEntityHost = {
     table: () => this.requireTable(),
     candidateMatches: (id, path) => this.sessionPaths.get(id) === path || this.missingSessionPaths.has(id),
+    remoteStatus: async (host, path) => {
+      if (this.remoteBackend === undefined) throw new Error('remote workspace backend is unavailable')
+      return await this.remoteBackend.status(host, path)
+    },
     readSessionHeader: id => this.readSessionHeader(id),
     rememberSessionPath: (id, path) => {
       this.sessionPaths.set(id, path)
@@ -235,12 +254,12 @@ export class WorkspaceRegistry extends Service {
   // (.agents/notes/archived/simplification/2026-07-31-one-route-to-add-a-workspace.md);
   // drop the parameter with its @param clause and the `create(path, title?)`
   // lines in this package's README pair.
-  async create(path: string, title?: string): Promise<Workspace> {
-    const canonical = await realpathNormalize(path)
-    if (!(await stat(canonical)).isDirectory()) {
+  async create(path: string, title?: string, host?: string): Promise<Workspace> {
+    const canonical = await this.canonical(path, host)
+    if (host === undefined && !(await stat(canonical)).isDirectory()) {
       throw new Error(`cannot create a workspace at '${canonical}': path is not a directory`)
     }
-    return await this.enqueueOperation(() => this.createCanonical(canonical, title))
+    return await this.enqueueOperation(() => this.createCanonical(canonical, title, false, host))
   }
 
   /**
@@ -256,6 +275,7 @@ export class WorkspaceRegistry extends Service {
    * @returns the initialized Workspace, or undefined when automatic creation is ineligible.
    */
   initializeDefault(resolveDirectory: () => Promise<string>): Promise<Workspace | undefined> {
+    if (process.env.DSH_REMOTE_ONLY === '1') return Promise.resolve(undefined)
     return this.enqueueOperation(async () => {
       const state = this.requireState()
       if (state.defaultWorkspaceId !== undefined) return this.entities.get(state.defaultWorkspaceId)
@@ -499,17 +519,17 @@ export class WorkspaceRegistry extends Service {
    * @param path - Existing directory path in a fully qualified spelling.
    * @returns the workspace owning the canonical path, when one exists.
    */
-  async resolveByPath(path: string): Promise<Workspace | undefined> {
-    const canonical = await realpathNormalize(path)
+  async resolveByPath(path: string, host?: string): Promise<Workspace | undefined> {
+    const canonical = await this.canonical(path, host)
     for (const entity of this.entities.values()) {
-      if (entity.path === canonical) return entity
+      if (entity.path === canonical && entity.host === host) return entity
     }
     return undefined
   }
 
-  private async createCanonical(canonical: string, title?: string, firstUse = false): Promise<WorkspaceEntity> {
+  private async createCanonical(canonical: string, title?: string, firstUse = false, host?: string): Promise<WorkspaceEntity> {
     for (const entity of this.entities.values()) {
-      if (entity.path === canonical) return entity
+      if (entity.path === canonical && entity.host === host) return entity
     }
 
     const workspaceName = title ?? defaultWorkspaceTitle(canonical)
@@ -519,6 +539,7 @@ export class WorkspaceRegistry extends Service {
     const now = new Date().toISOString()
     const record: WorkspaceRecord = {
       path: canonical,
+      ...(host === undefined ? {} : { host }),
       title: workspaceName,
       sessionIds: [],
       createdAt: now,
@@ -661,19 +682,19 @@ export class WorkspaceRegistry extends Service {
     const groups: BootstrapGroup[] = [...groupsByPath].map(([path, groupHeaders]) => {
       groupHeaders.sort(compareHeaders)
       const newest = groupHeaders[0] as SessionHeader
-      return { path, headers: groupHeaders, newestAt: newest.createdAt }
+      return { identity: path, path: newest.cuteafd_workspace === undefined ? path : remoteWorkspacePath(newest.cuteafd_workspace.path, newest.cuteafd_workspace.host), host: newest.cuteafd_workspace?.host, headers: groupHeaders, newestAt: newest.createdAt }
     }).sort((left, right) =>
       right.newestAt - left.newestAt || left.path.localeCompare(right.path))
 
     const byPath = new Map<string, WorkspaceId>()
     const accounted = new Map<SessionId, WorkspaceId>()
     for (const [id, record] of table.entries()) {
-      byPath.set(record.path, id)
+      byPath.set(workspaceIdentity(record.path, record.host), id)
       for (const sessionId of record.sessionIds) accounted.set(sessionId, id)
     }
 
     for (const group of groups) {
-      let id = byPath.get(group.path)
+      let id = byPath.get(group.identity)
       if (id === undefined) {
         const sessionIds = group.headers
           .map(header => header.id)
@@ -683,13 +704,14 @@ export class WorkspaceRegistry extends Service {
         const createdAt = new Date(group.newestAt).toISOString()
         const record: WorkspaceRecord = {
           path: group.path,
+          ...(group.host === undefined ? {} : { host: group.host }),
           title: defaultWorkspaceTitle(group.path),
           sessionIds,
           createdAt,
           updatedAt: createdAt,
         }
         await table.put(id, record)
-        byPath.set(group.path, id)
+        byPath.set(group.identity, id)
         for (const sessionId of sessionIds) accounted.set(sessionId, id)
         continue
       }
@@ -712,12 +734,12 @@ export class WorkspaceRegistry extends Service {
       for (const sessionId of historical) accounted.set(sessionId, id)
     }
 
-    const groupRank = new Map(groups.map(group => [group.path, group.newestAt]))
+    const groupRank = new Map(groups.map(group => [group.identity, group.newestAt]))
     const priorRank = new Map(state.workspaceIds.map((id, index) => [id, index]))
     const workspaceIds = [...table.entries()]
       .sort(([leftId, left], [rightId, right]) => {
-        const leftTime = groupRank.get(left.path) ?? Date.parse(left.createdAt)
-        const rightTime = groupRank.get(right.path) ?? Date.parse(right.createdAt)
+        const leftTime = groupRank.get(workspaceIdentity(left.path, left.host)) ?? Date.parse(left.createdAt)
+        const rightTime = groupRank.get(workspaceIdentity(right.path, right.host)) ?? Date.parse(right.createdAt)
         return rightTime - leftTime
           || (priorRank.get(leftId) ?? Number.MAX_SAFE_INTEGER)
             - (priorRank.get(rightId) ?? Number.MAX_SAFE_INTEGER)
@@ -763,14 +785,14 @@ export class WorkspaceRegistry extends Service {
     const paths = new Map<string, WorkspaceId>()
     const accounted = new Map<SessionId, WorkspaceId>()
     for (const [id, record] of table.entries()) {
-      const pathHolder = paths.get(record.path)
+      const pathHolder = paths.get(workspaceIdentity(record.path, record.host))
       if (pathHolder !== undefined) {
         throw new Error(
           `workspace domain is inconsistent: path '${record.path}' is claimed `
           + `by both workspace '${pathHolder}' and workspace '${id}'`,
         )
       }
-      paths.set(record.path, id)
+      paths.set(workspaceIdentity(record.path, record.host), id)
       for (const sessionId of record.sessionIds) {
         const holder = accounted.get(sessionId)
         if (holder !== undefined) {
@@ -812,6 +834,19 @@ export class WorkspaceRegistry extends Service {
       this.invalidSessionPaths.set(header.id, 'header has no cwd')
       return
     }
+    if (header.cuteafd_workspace !== undefined) {
+      try {
+        const remote = header.cuteafd_workspace
+        if (remote.path !== header.cwd) throw new Error('remote path differs from cwd')
+        this.sessionPaths.set(header.id, workspaceIdentity(remoteWorkspacePath(remote.path, remote.host), remote.host))
+        this.invalidSessionPaths.delete(header.id)
+      } catch { this.invalidSessionPaths.set(header.id, 'invalid remote workspace identity') }
+      return
+    }
+    if (process.env.DSH_REMOTE_ONLY === '1') {
+      this.invalidSessionPaths.set(header.id, 'local workspace is unavailable in remote-only mode')
+      return
+    }
     try {
       const path = await realpathNormalize(header.cwd)
       if (!(await stat(path)).isDirectory()) {
@@ -845,7 +880,7 @@ export class WorkspaceRegistry extends Service {
     for (const entity of this.entities.values()) {
       const record = this.requireTable().get(entity.id) as WorkspaceRecord
       for (const sessionId of record.sessionIds) {
-        if (this.host.candidateMatches(sessionId, record.path)) continue
+        if (this.host.candidateMatches(sessionId, workspaceIdentity(record.path, record.host))) continue
         const path = this.sessionPaths.get(sessionId)
         const reason = this.invalidSessionPaths.get(sessionId)
           ?? (this.headers.has(sessionId)

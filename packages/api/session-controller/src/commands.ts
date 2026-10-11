@@ -122,13 +122,15 @@ export class SessionCommandController {
       }
     }
     const cwd = workspace?.path ?? request.cwd ?? this.defaultCwd
-    if (process.env.DSH_REMOTE_ONLY === '1' && (request.host === undefined || request.cwd === undefined || workspace !== undefined)) {
+    const host = workspace?.host ?? request.host
+    if (workspace !== undefined && request.host !== undefined && request.host !== workspace.host) throw new RemoteError('gateway/bad-request', 'session host differs from workspace host', {})
+    if (process.env.DSH_REMOTE_ONLY === '1' && (host === undefined || (request.cwd === undefined && workspace === undefined))) {
       throw new RemoteError('gateway/bad-request', 'remote session creation requires host and absolute cwd', {})
     }
-    if (request.host !== undefined && (!/^[a-zA-Z0-9][a-zA-Z0-9_.-]*$/.test(request.host) || !cwd.startsWith('/') || cwd.includes('\0') || workspace !== undefined)) {
+    if (host !== undefined && (!/^[a-zA-Z0-9][a-zA-Z0-9_.-]*$/.test(host) || !cwd.startsWith('/') || /[\r\n\0]/u.test(cwd))) {
       throw new RemoteError('gateway/bad-request', 'remote session creation requires a valid SSH alias and absolute cwd', {})
     }
-    const remoteWorkspace = request.host === undefined ? undefined : { kind: 'cuteafd-ssh' as const, host: request.host, path: cwd }
+    const remoteWorkspace = host === undefined ? undefined : { kind: 'cuteafd-ssh' as const, host, path: cwd }
     let created: ApiSessionCreated
     try {
       created = await this.agents.createSession({

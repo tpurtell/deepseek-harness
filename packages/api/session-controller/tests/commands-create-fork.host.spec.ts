@@ -76,6 +76,23 @@ describe('Session creation failures', () => {
       await ctx.fiber.dispose()
     }
   })
+  it('creates a remote session from a host-aware workspace without accepting a host override', async () => {
+    const ctx = await baseContext()
+    const attachSession = vi.fn(async () => {})
+    const workspace = { id: 'remote-workspace' as WorkspaceId, host: 'rhea', path: '/remote/work', attachSession }
+    ctx.provide('workspaceRegistry', { get: () => workspace, archivedSessionIds: [] } as never)
+    const createSession = vi.fn(publishedSession(ctx, SessionId('session-remote-workspace')))
+    const controller = new SessionCommandController(ctx, controllerAgents(ctx, { createSession }), '/default')
+    vi.stubEnv('DSH_REMOTE_ONLY', '1')
+    try {
+      const created = await controller.create({ workspaceId: workspace.id })
+      expect(createSession).toHaveBeenCalledWith(expect.objectContaining({ cwd: '/remote/work', remoteWorkspace: { kind: 'cuteafd-ssh', host: 'rhea', path: '/remote/work' } }))
+      expect(attachSession).toHaveBeenCalledWith(created.sessionId)
+      await expectFailure(controller.create({ workspaceId: workspace.id, host: 'moa' }), 'gateway/bad-request')
+      expect(createSession).toHaveBeenCalledTimes(1)
+    } finally { vi.unstubAllEnvs(); await ctx.fiber.dispose() }
+  })
+
   it('creates in the default cwd without a named identity when no explicit target is supplied', async () => {
     const ctx = await baseContext()
     ctx.provide('workspaceRegistry', { get: () => undefined, list: () => [], archivedSessionIds: [] } as never)
