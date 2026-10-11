@@ -1,6 +1,6 @@
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { dirname, join } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { loadCordisYaml } from './cordis-yaml.ts'
 import { verifyRuntimeClosure } from './verify-runtime-closure.ts'
@@ -39,6 +39,10 @@ afterEach(() => {
 })
 
 describe('verifyRuntimeClosure', () => {
+  it('ships a closed cuteafd production runtime without optional peer installation', async () => {
+    expect(await verifyRuntimeClosure(resolve(import.meta.dirname, '..'), 'packages/cuteafd/runtime/package.json', false))
+      .toMatchObject({ failures: [], presetCount: 0 })
+  })
   it('checks a private worker closure without requiring application presets', async () => {
     const manifestPath = 'packages/ssh/ssh-helper-runtime/package.json'
     const root = fixture({ [manifestPath]: { name: 'helper', dependencies: { '@scope/worker': 'workspace:^' } } })
