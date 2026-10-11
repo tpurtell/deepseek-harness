@@ -183,10 +183,11 @@ export function apply(ctx: Context, config: Config = {}): void {
       render: (_args, value) => [{ type: 'text', text: renderSpawn(value, maxResultBytes) }],
     },
     async execute(args: SpawnArgs, exec) {
+      const executionCtx = exec.agent?.executionCtx ?? ctx
       if (args.type.length === 0) throw new Error('type must be a non-empty string')
       const owner = requireAgent(exec.agent)
-      const cwd = await ctx.workingDirectory.ensure(owner, exec.signal)
-      const result = await ctx.terminals.spawn(owner, {
+      const cwd = await executionCtx.workingDirectory.ensure(owner, exec.signal)
+      const result = await executionCtx.terminals.spawn(owner, {
         type: args.type,
         ...args.name !== undefined ? { name: args.name } : {},
         cwd: args.cwd === undefined ? cwd : resolve(cwd, args.cwd),
@@ -249,12 +250,13 @@ export function apply(ctx: Context, config: Config = {}): void {
         : null,
     },
     async execute(args: SendArgs, exec) {
+      const executionCtx = exec.agent?.executionCtx ?? ctx
       const owner = requireAgent(exec.agent)
       const id = sessionId(args)
       const request = { text: args.text, submit: args.submit ?? true }
       if (args.run_in_background === true) {
         if (!enableRunInBackground) throw new Error('background terminal sends are disabled by tool-terminal configuration')
-        const jobs = ctx.get('jobs')
+        const jobs = executionCtx.get('jobs')
         if (jobs === undefined) throw new Error('background terminal sends require @deepseek-ai/dsh-jobs and @deepseek-ai/dsh-tool-jobs')
         let cancelRequested = false
         let operation: TerminalSendOperation | undefined
@@ -265,7 +267,7 @@ export function apply(ctx: Context, config: Config = {}): void {
           outputLimitBytes: maxResultBytes,
           output: [sendSource(() => operation)],
           run: () => {
-            const started = ctx.terminals.startSend(owner, id, request)
+            const started = executionCtx.terminals.startSend(owner, id, request)
             operation = started
             return {
               cancel: () => {
@@ -281,7 +283,7 @@ export function apply(ctx: Context, config: Config = {}): void {
         })
         return { kind: 'background' as const, jobId }
       }
-      const operation = ctx.terminals.startSend(owner, id, { ...request, signal: exec.signal })
+      const operation = executionCtx.terminals.startSend(owner, id, { ...request, signal: exec.signal })
       const result = await operation.done
       if (exec.signal.aborted) throw new Error('terminal send aborted')
       return { kind: 'foreground' as const, ...result }
@@ -355,7 +357,8 @@ export function apply(ctx: Context, config: Config = {}): void {
       render: (args, value) => [{ type: 'text', text: `delivered ${args.signal} to foreground process group ${value.targetPgid}` }],
     },
     async execute(args: SignalArgs, exec) {
-      return ctx.terminals.signal(requireAgent(exec.agent), sessionId(args), args.signal)
+      const executionCtx = exec.agent?.executionCtx ?? ctx
+      return executionCtx.terminals.signal(requireAgent(exec.agent), sessionId(args), args.signal)
     },
     presentCall: args => ({ card: 'generic', title: `Signal terminal ${args.sessionId}`, kind: 'execute', rawInput: args }),
   }))
@@ -384,8 +387,9 @@ export function apply(ctx: Context, config: Config = {}): void {
       }],
     },
     async execute(args: SessionArgs, exec) {
+      const executionCtx = exec.agent?.executionCtx ?? ctx
       const id = sessionId(args)
-      const closed = await ctx.terminals.kill(requireAgent(exec.agent), id)
+      const closed = await executionCtx.terminals.kill(requireAgent(exec.agent), id)
       return { sessionId: id, outcome: closed ? 'closed' as const : 'already-closing' as const }
     },
     presentCall: args => ({ card: 'generic', title: `Close terminal ${(args).sessionId}`, kind: 'delete' }),
