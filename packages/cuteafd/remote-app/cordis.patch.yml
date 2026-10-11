@@ -20,6 +20,9 @@
   remove: true
 - id: workspace-changes
   remove: true
+# Deliverables requires the removed local watch service; do not leave a pending UI row.
+- id: ui-deliverables
+  remove: true
 - id: directory-picker
   remove: true
 - id: skill-filesystem
