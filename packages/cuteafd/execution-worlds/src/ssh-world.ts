@@ -10,6 +10,22 @@ import type { WorldFactory } from './index.ts'
 
 export type HostConfiguration = (alias: string) => Promise<Config>
 
+/** Keep session-owned providers in their isolated scope when routed services trace their callers. */
+function ownedCapability<T extends object>(value: T): T {
+  const original = Reflect.get(value, Symbol.for('cordis.original')) as T | undefined
+  const provider = original ?? value
+  const methods = new Map<PropertyKey, unknown>()
+  return new Proxy(provider, {
+    get(target, key) {
+      if (key === Symbol.for('cordis.tracker')) return undefined
+      const member = Reflect.get(target, key, target)
+      if (typeof member !== 'function') return member
+      if (!methods.has(key)) methods.set(key, member.bind(target))
+      return methods.get(key)
+    },
+  })
+}
+
 export function sshWorldFactory(ctx: Context, hostConfiguration: HostConfiguration): WorldFactory {
   return async (workspace, header) => {
     const config = await hostConfiguration(workspace.host)
@@ -39,11 +55,11 @@ export function sshWorldFactory(ctx: Context, hostConfiguration: HostConfigurati
       await Promise.all([shell, ptc])
       return {
         host: workspace.host, path: header.cwd ?? workspace.path,
-        fs: child.get('fs') as SshFileSystem,
-        subprocess: child.get('subprocess') as SshSubprocessRuntime,
-        sandbox: child.get('sandbox') as SshSandboxProvider,
-        shell: child.get('shell') as SandboxBashExecutor,
-        ptcRuntime: child.get('ptcRuntime') as NodePtcRuntime,
+        fs: ownedCapability(child.get('fs') as SshFileSystem),
+        subprocess: ownedCapability(child.get('subprocess') as SshSubprocessRuntime),
+        sandbox: ownedCapability(child.get('sandbox') as SshSandboxProvider),
+        shell: ownedCapability(child.get('shell') as SandboxBashExecutor),
+        ptcRuntime: ownedCapability(child.get('ptcRuntime') as NodePtcRuntime),
         dispose,
       }
     } catch (error) {
