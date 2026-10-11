@@ -305,6 +305,7 @@
     { "path": "./packages/typert/registry" },
     { "path": "./packages/cuteafd/execution-worlds" },
     { "path": "./packages/cuteafd/admin" },
+    { "path": "./packages/cuteafd/hosts" },
     { "path": "./packages/api/gateway/tsconfig.host.json" },
     { "path": "./packages/api/remotes/tsconfig.host.json" },
     { "path": "./packages/api/job-controller/tsconfig.host.json" },
