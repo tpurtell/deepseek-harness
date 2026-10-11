@@ -74,7 +74,7 @@ export function applyEntryPatches(
   buildMap(data)
 
   for (const patch of patches) {
-    const { id, insert, name, ...overrides } = patch
+    const { id, insert, name, remove, ...overrides } = patch
 
     if (insert) {
       if (id) {
@@ -117,6 +117,22 @@ export function applyEntryPatches(
       continue
     }
 
+    if (remove) {
+      const removeFrom = (entries: EntryOptions[]): boolean => {
+        const index = entries.indexOf(target)
+        if (index !== -1) {
+          entries.splice(index, 1)
+          return true
+        }
+        return entries.some(entry => entry.group && Array.isArray(entry.config) && removeFrom(entry.config))
+      }
+      removeFrom(data)
+      // A removed group also removes its descendants from later patch lookup.
+      entryMap.clear()
+      buildMap(data)
+      continue
+    }
+
     for (const [key, value] of Object.entries(overrides)) {
       if (key === 'id') continue
       target[key] = value
@@ -130,6 +146,8 @@ export function applyEntryPatches(
 export interface PatchOptions {
   id?: string
   insert?: EntryOptions[]
+  /** Structurally remove a row and its entire subtree, not merely disable it. */
+  remove?: boolean
   name?: string
   config?: any
   group?: boolean | null
