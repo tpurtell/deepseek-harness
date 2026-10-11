@@ -52,6 +52,27 @@ it('requires explicit fingerprint confirmation and persists only dedicated confi
   expect(await hosts.probe('rhea')).toEqual({ platform: 'Linux', machine: 'aarch64', libc: 'glibc 2.39' })
 })
 
+it('accepts OpenSSH public output with a key comment and normalizes the identity', async () => {
+  const { hosts, runner } = await fixture()
+  const original = vi.mocked(runner).getMockImplementation()!
+  vi.mocked(runner).mockImplementation(async (command, args, input) => command === 'ssh-keygen' && args.includes('-y')
+    ? `${publicKey} operator@host with spaces\n`
+    : original(command, args, input))
+  const scanned = await hosts.scan(spec)
+  expect((await hosts.confirm(scanned.confirmation, scanned.fingerprint)).publicKey).toBe(publicKey)
+})
+
+it('rejects malformed identity blobs even when the key type matches', async () => {
+  const { hosts, runner } = await fixture()
+  const scanned = await hosts.scan(spec)
+  const original = vi.mocked(runner).getMockImplementation()!
+  vi.mocked(runner).mockImplementation(async (command, args, input) => command === 'ssh-keygen' && args.includes('-y')
+    ? 'ssh-ed25519 YWJj comment'
+    : original(command, args, input))
+  await expect(hosts.confirm(scanned.confirmation, scanned.fingerprint)).rejects.toThrow('Ed25519 identity key')
+  expect(hosts.list()).toEqual([])
+})
+
 it('rejects unconfirmed hosts, mismatched fingerprints and SSH option injection', async () => {
   const { hosts, runner } = await fixture()
   await expect(hosts.configuration('rhea')).rejects.toThrow('not registered')

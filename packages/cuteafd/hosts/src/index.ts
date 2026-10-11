@@ -128,7 +128,10 @@ export class Hosts extends Service {
         await chmod(staging, 0o600)
         let publicKey: string
         try { publicKey = (await this.runner('ssh-keygen', ['-y', '-P', '', '-f', staging])).trim() } catch { throw new Error('expected a valid unencrypted OpenSSH private key') }
-        if (!/^ssh-ed25519 [a-zA-Z0-9+/]+={0,2}$/u.test(publicKey)) throw new Error('expected an Ed25519 identity key')
+        // OpenSSH may retain the private key's comment in -y output.
+        if (/[\r\n\0]/u.test(publicKey)) throw new Error('expected an Ed25519 identity key')
+        publicKey = publicKey.split(/\s+/u).slice(0, 2).join(' ')
+        try { hostKeyFingerprint(`identity ${publicKey}`) } catch { throw new Error('expected an Ed25519 identity key') }
         // Exclusive publication preserves any orphan/existing key instead of replacing it.
         await link(staging, keyPath)
         const record = { ...pending.spec, knownHosts: pending.key }
