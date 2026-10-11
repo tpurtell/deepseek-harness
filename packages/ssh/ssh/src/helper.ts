@@ -136,7 +136,16 @@ export async function runSshHelper(transport: HelperTransport): Promise<void> {
         Object.entries(input.env).filter((entry): entry is [string, string] => entry[1] !== null),
       )
       try {
-        return await ctx.subprocess.resolveExecutable(input.command, env, signal)
+        try {
+          return await ctx.subprocess.resolveExecutable(input.command, env, signal)
+        } catch (error) {
+          if (input.command === 'rg' && transport.kind === 'executable'
+            && typeof error === 'object' && error !== null && 'name' in error
+            && error.name === 'SubprocessExecutableNotFoundError') {
+            return await ctx.subprocess.resolveExecutable(`${transport.entryPath}-rg`, env, signal)
+          }
+          throw error
+        }
       } catch (error) {
         if (typeof error === 'object' && error !== null
           && 'name' in error && error.name === 'SubprocessExecutableNotFoundError'

@@ -86,6 +86,21 @@ describe.skipIf(process.platform === 'win32')('SSH helper runtime', () => {
     } finally { await test.close() }
   })
 
+  it('falls back only to the remote packaged ripgrep sidecar', async () => {
+    const test = await helper(true, 30_000, 'executable')
+    const missing = () => Object.assign(new Error('not installed'), { name: 'SubprocessExecutableNotFoundError' })
+    const resolveExecutable = vi.spyOn(LocalSubprocessRuntime.prototype, 'resolveExecutable')
+    try {
+      resolveExecutable.mockRejectedValueOnce(missing()).mockResolvedValueOnce('/remote/helper-rg')
+      expect(await test.client.request('executable', { command: 'rg' }, z.string())).toBe('/remote/helper-rg')
+      expect(resolveExecutable.mock.calls.at(-1)?.[0]).toMatch(/helper-entry\.ts-rg$/u)
+      resolveExecutable.mockRejectedValueOnce(missing()).mockRejectedValueOnce(missing())
+      await expect(test.client.request('executable', { command: 'rg' }, z.string())).rejects.toMatchObject({ code: 'SUBPROCESS_EXECUTABLE_NOT_FOUND' })
+      resolveExecutable.mockRejectedValueOnce(new Error('unreachable'))
+      await expect(test.client.request('executable', { command: 'rg' }, z.string())).rejects.toThrow('unreachable')
+    } finally { resolveExecutable.mockRestore(); await test.close() }
+  })
+
   it('refuses unconfined sandbox requests and resolves executables in the helper world', async () => {
     const test = await helper()
     const confine = vi.spyOn(LocalSandboxProvider.prototype, 'confine').mockImplementation(async argv => ({

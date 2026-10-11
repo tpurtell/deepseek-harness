@@ -1,7 +1,7 @@
 /**
  * Shared execution plumbing for the `glob` / `grep` search tools: the
  * package-owned `SEARCH_*` error vocabulary, one spawn helper that runs the
- * PACKAGED ripgrep binary (`@vscode/ripgrep`) with a plain argv vector and
+ * packaged ripgrep binary (or the selected remote world's `rg`) with a plain argv vector and
  * returns complete raw stdout, the best-effort formatted-result spill handoff,
  * and workdir-relative path display.
  *
@@ -237,7 +237,9 @@ export async function runRipgrep(
   let handle: SubprocessHandle
   try {
     handle = ctx.subprocess.spawn({
-      argv: [await resolveRgPath(), '--no-config', ...argv],
+      argv: [await (process.env.DSH_REMOTE_ONLY === '1'
+        ? ctx.subprocess.resolveExecutable('rg', undefined, exec.signal)
+        : resolveRgPath()), '--no-config', ...argv],
       cwd: workdir,
       stdio: {
         stdin: 'ignore',
