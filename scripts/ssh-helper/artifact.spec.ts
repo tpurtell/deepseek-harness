@@ -1,9 +1,9 @@
-import { cp, lstat, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises'
+import { chmod, cp, lstat, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { create as createTar } from 'tar'
 import { expect, it, onTestFinished } from 'vitest'
-import { artifactManifestSchema, fileDigest, helperSourceProvenance, payloadFiles, SSH_HELPER_TARGETS, verifyPayload } from './artifact.ts'
+import { artifactManifestSchema, fileDigest, helperSourceProvenance, normalizePayloadModes, payloadFiles, SSH_HELPER_TARGETS, verifyPayload } from './artifact.ts'
 import { macosDeploymentVersions } from './native.ts'
 import { extractHelper } from '../verify-ssh-helper-artifact.ts'
 import { prepareSshRelease } from './release.ts'
@@ -91,6 +91,22 @@ it('extracts and verifies a portable archive in a new directory', async () => {
   expect(dirname(directory)).toBe(extracted)
   expect(await verifyPayload(directory)).toEqual(test.metadata)
   expect(await readFile(join(directory, 'dsh-ssh-helper'), 'utf8')).toBe('fixture executable')
+})
+
+it.skipIf(process.platform === 'win32')('normalizes source umask permissions before the portable manifest round trip', async () => {
+  const test = await fixture()
+  await chmod(join(test.payload, 'dsh-ssh-helper'), 0o775)
+  await chmod(join(test.payload, 'native/system/package.json'), 0o664)
+  await normalizePayloadModes(test.payload)
+  for (const file of test.metadata.files) file.mode = (await lstat(join(test.payload, file.path))).mode & 0o777
+  expect(test.metadata.files.find(file => file.path === 'dsh-ssh-helper')?.mode).toBe(0o755)
+  expect(test.metadata.files.find(file => file.path === 'native/system/package.json')?.mode).toBe(0o644)
+  await test.save()
+  const archive = join(test.root, 'normalized.tar.gz')
+  await createTar({ cwd: test.root, file: archive, gzip: true, portable: true }, ['dsh-ssh-helper'])
+  const extracted = join(test.root, 'normalized')
+  await mkdir(extracted)
+  expect(await verifyPayload(await extractHelper(archive, extracted))).toEqual(test.metadata)
 })
 
 it('reads minimum macOS versions without accepting a linked library version as the OS version', () => {

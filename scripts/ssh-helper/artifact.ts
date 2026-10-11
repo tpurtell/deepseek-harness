@@ -1,7 +1,7 @@
 /** Versioned archive metadata and file integrity checks for SSH helper releases. */
 import { execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { lstat, readFile, readdir } from 'node:fs/promises'
+import { chmod, lstat, readFile, readdir } from 'node:fs/promises'
 import { join, relative, sep } from 'node:path'
 import { z } from 'zod'
 
@@ -69,6 +69,14 @@ export async function payloadFiles(root: string): Promise<string[]> {
   }
   await visit(root)
   return paths.filter(path => path !== 'manifest.json').sort()
+}
+
+/** Normalize payload permissions before portable tar and its manifest are created. */
+export async function normalizePayloadModes(root: string): Promise<void> {
+  for (const path of await payloadFiles(root)) {
+    const file = join(root, path)
+    await chmod(file, ((await lstat(file)).mode & 0o111) === 0 ? 0o644 : 0o755)
+  }
 }
 
 /**
