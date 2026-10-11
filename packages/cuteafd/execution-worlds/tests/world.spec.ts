@@ -12,7 +12,12 @@ function recordingWorld(host: string): { world: ExecutionWorld; calls: string[] 
   const calls: string[] = []
   const recorder = (kind: string) => new Proxy({}, {
     get(_target, method) {
-      return (..._args: unknown[]) => { calls.push(`${kind}.${String(method)}`); return `${host}:${String(method)}` }
+      return (..._args: unknown[]) => {
+        calls.push(`${kind}.${String(method)}`)
+        if (method === 'spawn') return { done: Promise.resolve() }
+        if (method === 'spawnTerminal' || method === 'execute') return Promise.resolve({ done: Promise.resolve() })
+        return `${host}:${String(method)}`
+      }
     },
   })
   return { calls, world: { host, path: '/work', fs: recorder('fs') as FileSystem, subprocess: recorder('subprocess') as SubprocessRuntime, sandbox: recorder('sandbox') as SandboxProvider, shell: recorder('shell') as ShellExecutor, ptcRuntime: recorder('ptc') as PtcRuntime } }
@@ -40,6 +45,28 @@ describe('remote execution boundary', () => {
       expect(dispose).toHaveBeenCalledTimes(2)
       await ctx.executionWorlds.withHeader(root.header, () => {})
       expect(factory).toHaveBeenCalledTimes(3)
+    } finally { await ctx.fiber.dispose(); vi.useRealTimers() }
+  })
+
+  it('does not idle-expire a session with a live background process', async () => {
+    vi.useFakeTimers()
+    const ctx = new Context()
+    await ctx.plugin(SessionStore)
+    await ctx.plugin(ExecutionWorlds)
+    const dispose = vi.fn(async () => {})
+    ctx.executionWorlds.configure(async () => ({ ...recordingWorld('rhea').world, dispose }))
+    const session = ctx.sessions.create(SessionId('busy'), { meta: { cwd: '/work', cuteafd_workspace: { kind: 'cuteafd-ssh', host: 'rhea', path: '/work' } } })
+    let finish!: () => void
+    const done = new Promise<void>(resolve => { finish = resolve })
+    try {
+      await ctx.executionWorlds.withHeader(session.header, () => ctx.executionWorlds.retainUntil(done))
+      await vi.advanceTimersByTimeAsync(120_000)
+      expect(dispose).not.toHaveBeenCalled()
+      finish()
+      await vi.advanceTimersByTimeAsync(59_999)
+      expect(dispose).not.toHaveBeenCalled()
+      await vi.advanceTimersByTimeAsync(1)
+      expect(dispose).toHaveBeenCalledTimes(1)
     } finally { await ctx.fiber.dispose(); vi.useRealTimers() }
   })
 

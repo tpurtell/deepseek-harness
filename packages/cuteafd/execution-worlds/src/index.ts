@@ -62,6 +62,7 @@ export class ExecutionWorlds extends Service {
   static inject = ['sessions']
   private readonly currentWorld = new AsyncLocalStorage<ExecutionWorld>()
   private readonly worlds = new Map<SessionId, WorldEntry>()
+  private readonly owners = new WeakMap<ExecutionWorld, SessionId>()
   private closing = false
   private factory: WorldFactory | undefined
 
@@ -134,12 +135,28 @@ export class ExecutionWorlds extends Service {
     }
     if (entry.timer !== undefined) clearTimeout(entry.timer)
     entry.active++
-    try { return await this.run(await entry.world, operation) } finally {
-      entry.active--
-      if (entry.active === 0 && this.worlds.get(owner.id) === entry) {
-        entry.timer = setTimeout(() => { void this.release(owner.id) }, 60_000)
-        entry.timer.unref()
-      }
+    try {
+      const world = await entry.world
+      this.owners.set(world, owner.id)
+      return await this.run(world, operation)
+    } finally { this.finish(owner.id, entry) }
+  }
+
+  /** Live process/PTY handles retain their owner's connection beyond the call boundary. */
+  retainUntil(done: Promise<unknown>): void {
+    const owner = this.owners.get(this.current())
+    const entry = owner === undefined ? undefined : this.worlds.get(owner)
+    if (entry === undefined || owner === undefined) return
+    if (entry.timer !== undefined) clearTimeout(entry.timer)
+    entry.active++
+    void done.then(() => this.finish(owner, entry), () => this.finish(owner, entry))
+  }
+
+  private finish(owner: SessionId, entry: WorldEntry): void {
+    entry.active--
+    if (entry.active === 0 && this.worlds.get(owner) === entry) {
+      entry.timer = setTimeout(() => { void this.release(owner).catch(() => {}) }, 60_000)
+      entry.timer.unref()
     }
   }
 
@@ -179,8 +196,17 @@ export class WorldSubprocess extends SubprocessRuntime {
   private get backend(): SubprocessRuntime { return this.ctx.executionWorlds.current().subprocess }
   override resolveExecutable(...args: Parameters<SubprocessRuntime['resolveExecutable']>) { return this.backend.resolveExecutable(...args) }
   override terminalEnvironment(...args: Parameters<SubprocessRuntime['terminalEnvironment']>) { return this.backend.terminalEnvironment(...args) }
-  override spawn(...args: Parameters<SubprocessRuntime['spawn']>) { return this.backend.spawn(...args) }
-  override spawnTerminal(...args: Parameters<SubprocessRuntime['spawnTerminal']>) { return this.backend.spawnTerminal(...args) }
+  override spawn(...args: Parameters<SubprocessRuntime['spawn']>) {
+    const handle = this.backend.spawn(...args)
+    this.ctx.executionWorlds.retainUntil(handle.done)
+    return handle
+  }
+  override spawnTerminal(...args: Parameters<SubprocessRuntime['spawnTerminal']>) {
+    return this.backend.spawnTerminal(...args).then(handle => {
+      this.ctx.executionWorlds.retainUntil(handle.done)
+      return handle
+    })
+  }
 }
 
 export class WorldSandbox extends SandboxProvider {
@@ -197,7 +223,12 @@ export class WorldShell extends ShellExecutor {
   }
   override get sandboxMode() { return this.ctx.sandboxPolicy.defaultMode }
   override resolve(...args: Parameters<ShellExecutor['resolve']>) { return this.backend.resolve(...args) }
-  override execute(...args: Parameters<ShellExecutor['execute']>) { return this.backend.execute(...args) }
+  override execute(...args: Parameters<ShellExecutor['execute']>) {
+    return this.backend.execute(...args).then(handle => {
+      this.ctx.executionWorlds.retainUntil(handle.done)
+      return handle
+    })
+  }
 }
 
 export class WorldPtcRuntime extends PtcRuntime {
