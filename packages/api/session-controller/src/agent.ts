@@ -11,7 +11,7 @@ import type {} from '@deepseek-ai/dsh-agent-default-model'
 import type {} from '@deepseek-ai/dsh-agent-preset-registry'
 import { brandString } from '@deepseek-ai/dsh-brand'
 import { ReasoningEffortId } from '@deepseek-ai/dsh-llm'
-import type { Session, SessionId } from '@deepseek-ai/dsh-session'
+import { SESSION_FORMAT_VERSION, type Session, type SessionHeader, type SessionId } from '@deepseek-ai/dsh-session'
 import type { SessionInspection } from '@deepseek-ai/dsh-session-persistence'
 import { SessionQueryError, type SessionObservation } from '@deepseek-ai/dsh-session-query'
 import { RemoteError, remoteErrorOf } from '@deepseek-ai/dsh-typert-protocol'
@@ -63,6 +63,7 @@ export interface ApiSessionCreateRequest {
   readonly sessionId?: SessionId
   /** Directory the Session owns. */
   readonly cwd: string
+  readonly remoteWorkspace?: SessionHeader['cuteafd_workspace']
   /** Preset the Session runs; the configured default when omitted. */
   readonly agentPreset?: string
   /**
@@ -277,7 +278,7 @@ export class ApiSessionAgentController {
    */
   async createSession(request: ApiSessionCreateRequest): Promise<ApiSessionCreated> {
     const named = request.sessionId
-    if (named === undefined) return this.created(await this.createMinted(request.cwd, await this.composeAgent(request.agentPreset)))
+    if (named === undefined) return this.created(await this.createMinted(request.cwd, await this.composeAgent(request.agentPreset), request.remoteWorkspace))
     return this.inOrder(named, async () => this.created(await this.claim(named, request)))
   }
 
@@ -402,6 +403,9 @@ export class ApiSessionAgentController {
   private liveAgent(sessionId: SessionId): ApiSessionAgentResult | undefined {
     const agent = this.ctx.agents.get(sessionId)
     if (agent === undefined) return undefined
+    if (process.env.DSH_REMOTE_ONLY === '1' && agent.session.header.cuteafd_workspace === undefined) {
+      return { error: new RemoteError('gateway/internal', 'remote-only mode cannot open a local session', {}) }
+    }
     return hasApiSessionSubagentOwner(this.ctx, agent.session, agent)
       ? { error: apiSessionSubagentOwnershipError(sessionId) }
       : { agent }
@@ -431,6 +435,7 @@ export class ApiSessionAgentController {
     if (hasApiSessionSubagentOwner(this.ctx, { header: observation.header }, undefined)) {
       throw new ApiSessionSubagentOwnership(sessionId)
     }
+    if (process.env.DSH_REMOTE_ONLY === '1' && observation.header.cuteafd_workspace === undefined) throw new Error('remote-only mode cannot resume a local session')
     const composition = await this.composeAgent(this.presetForObservation(observation))
     const published = this.ctx.sessions.get(sessionId)
     const live = this.ctx.agents.get(sessionId)
@@ -463,18 +468,19 @@ export class ApiSessionAgentController {
       throw new ApiSessionSubagentOwnership(sessionId)
     }
     if (live !== undefined) {
+      this.assertRemoteIdentity(live.session.header, request.remoteWorkspace)
       if (live.session.header.cwd !== request.cwd) {
         throw new ApiSessionCwdConflict(live.id, request.cwd, live.session.header.cwd)
       }
       const composition = await this.composeAgent(request.agentPreset)
-      return await this.reuseLive(live, request, composition) ?? this.createMinted(request.cwd, composition)
+      return await this.reuseLive(live, request, composition) ?? this.createMinted(request.cwd, composition, request.remoteWorkspace)
     }
     let observation: SessionObservation
     try {
       observation = await this.ctx.sessionQuery.observeSession(sessionId)
     } catch (error: unknown) {
       if (!(error instanceof SessionQueryError) || error.code !== 'SESSION_QUERY_SESSION_NOT_FOUND') throw error
-      return this.createAgent(sessionId, request.cwd, await this.composeAgent(request.agentPreset))
+      return this.createAgent(sessionId, request.cwd, await this.composeAgent(request.agentPreset), request.remoteWorkspace)
     }
     let reusable: boolean
     {
@@ -482,13 +488,14 @@ export class ApiSessionAgentController {
       if (hasApiSessionSubagentOwner(this.ctx, { header: observed.header }, undefined)) {
         throw new ApiSessionSubagentOwnership(sessionId)
       }
+      this.assertRemoteIdentity(observed.header, request.remoteWorkspace)
       if (observed.header.cwd !== request.cwd) {
         throw new ApiSessionCwdConflict(sessionId, request.cwd, observed.header.cwd)
       }
       reusable = request.reusable(sessionId) && !observed.events.some(event => event.type === 'turn/start')
     }
     const composition = await this.composeAgent(request.agentPreset)
-    if (!reusable) return this.createMinted(request.cwd, composition)
+    if (!reusable) return this.createMinted(request.cwd, composition, request.remoteWorkspace)
     this.assertPresetApplicable(sessionId, request.agentPreset)
     try {
       return (await this.ctx.agents.resume({
@@ -497,11 +504,11 @@ export class ApiSessionAgentController {
         setup: this.reuseSetup(composition),
       })).agent
     } catch (error: unknown) {
-      if (error instanceof ApiSessionStartedSinceObserved) return this.createMinted(request.cwd, composition)
+      if (error instanceof ApiSessionStartedSinceObserved) return this.createMinted(request.cwd, composition, request.remoteWorkspace)
       if (!(error instanceof Error) || error.name !== 'SessionAlreadyOwnedError') throw error
       // Another resume in this process may hold the writer for the Agent it published.
       return this.ctx.agents.get(sessionId) === undefined
-        ? this.createMinted(request.cwd, composition)
+        ? this.createMinted(request.cwd, composition, request.remoteWorkspace)
         : this.claim(sessionId, request)
     }
   }
@@ -556,13 +563,33 @@ export class ApiSessionAgentController {
     return { agent, agentPreset: this.presetForSession(agent.session) }
   }
 
-  private createMinted(cwd: string, composition: ApiSessionComposition): Promise<Agent> {
-    return this.createAgent(brandString<SessionId>(`session-${randomUUID()}`), cwd, composition)
+  private assertRemoteIdentity(header: SessionHeader, requested: SessionHeader['cuteafd_workspace']): void {
+    if (process.env.DSH_REMOTE_ONLY === '1' && header.cuteafd_workspace === undefined) {
+      throw new Error('remote-only mode cannot adopt a local session')
+    }
+    if (requested !== undefined && (header.cuteafd_workspace?.host !== requested.host || header.cuteafd_workspace.path !== requested.path)) {
+      throw new Error('session remote workspace identity conflicts with requested host/path')
+    }
   }
 
-  private async createAgent(sessionId: SessionId, cwd: string, composition: ApiSessionComposition): Promise<Agent> {
+  private createMinted(cwd: string, composition: ApiSessionComposition, remoteWorkspace?: SessionHeader['cuteafd_workspace']): Promise<Agent> {
+    return this.createAgent(brandString<SessionId>(`session-${randomUUID()}`), cwd, composition, remoteWorkspace)
+  }
+
+  private async createAgent(sessionId: SessionId, cwd: string, composition: ApiSessionComposition, remoteWorkspace?: SessionHeader['cuteafd_workspace']): Promise<Agent> {
     try {
-      await mkdir(cwd, { recursive: true })
+      if (remoteWorkspace === undefined) {
+        if (process.env.DSH_REMOTE_ONLY === '1') throw new Error('remote-only mode requires a selected SSH host')
+        await mkdir(cwd, { recursive: true })
+      } else {
+        const worlds = this.ctx.get('executionWorlds') as { withHeader<T>(header: SessionHeader, operation: () => T): Promise<Awaited<T>> } | undefined
+        if (worlds === undefined) throw new Error('remote execution worlds unavailable')
+        const header: SessionHeader = { version: SESSION_FORMAT_VERSION, id: sessionId, createdAt: Date.now(), isSeeded: false, cwd, cuteafd_workspace: remoteWorkspace }
+        await worlds.withHeader(header, async () => {
+          const target = await this.ctx.fs.resolve(cwd)
+          if ((await this.ctx.fs.stat(target))?.type !== 'directory') throw new Error('remote workspace must be an existing directory')
+        })
+      }
     } catch (error: unknown) {
       throw new Error(`failed to ensure project directory "${cwd}": ${String(error)}`, { cause: error })
     }
@@ -571,6 +598,7 @@ export class ApiSessionAgentController {
       agentOptions: this.agentOptions(),
       meta: {
         cwd,
+        ...(remoteWorkspace === undefined ? {} : { cuteafd_workspace: structuredClone(remoteWorkspace) }),
         ...(composition.agentPreset === undefined ? {} : { agentPreset: composition.agentPreset }),
       },
       setup: composition.setup,

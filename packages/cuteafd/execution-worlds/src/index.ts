@@ -36,7 +36,9 @@ export class RemoteWorkspaceRequiredError extends Error {
 export function requireRemoteWorkspace(header: Pick<SessionHeader, 'cwd' | 'cuteafd_workspace'>): NonNullable<SessionHeader['cuteafd_workspace']> {
   const workspace = header.cuteafd_workspace
   if (workspace === undefined) throw new RemoteWorkspaceRequiredError()
-  if (workspace.kind !== 'cuteafd-ssh' || workspace.path !== header.cwd) throw new Error('invalid remote workspace identity')
+  if (workspace.kind !== 'cuteafd-ssh' || workspace.path !== header.cwd
+    || !/^[a-zA-Z0-9][a-zA-Z0-9_.-]*$/.test(workspace.host)
+    || !workspace.path.startsWith('/') || workspace.path.includes('\0')) throw new Error('invalid remote workspace identity')
   return workspace
 }
 
