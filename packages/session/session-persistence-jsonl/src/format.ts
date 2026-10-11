@@ -86,6 +86,7 @@ interface HeaderLine {
   id: SessionId
   createdAt: number
   cwd?: string
+  cuteafd_workspace?: SessionHeader['cuteafd_workspace']
   parentSession?: SessionId
   isSeeded: boolean
   origin?: 'subagent'
@@ -94,7 +95,7 @@ interface HeaderLine {
 }
 
 const HEADER_REQUIRED_KEYS = ['type', 'version', 'id', 'createdAt', 'isSeeded', 'delegationDepth'] as const
-const HEADER_OPTIONAL_KEYS = ['cwd', 'parentSession', 'origin', 'agentPreset'] as const
+const HEADER_OPTIONAL_KEYS = ['cwd', 'cuteafd_workspace', 'parentSession', 'origin', 'agentPreset'] as const
 const HEADER_KEYS = new Set<string>([...HEADER_REQUIRED_KEYS, ...HEADER_OPTIONAL_KEYS])
 
 /**
@@ -145,6 +146,7 @@ function fromHeaderLine(line: HeaderLine): SessionStorageMetadata {
       id: line.id,
       createdAt: line.createdAt,
       ...line.cwd !== undefined ? { cwd: line.cwd } : {},
+      ...line.cuteafd_workspace !== undefined ? { cuteafd_workspace: line.cuteafd_workspace } : {},
       ...line.parentSession !== undefined ? { parentSession: line.parentSession } : {},
       isSeeded: line.isSeeded,
       ...line.origin !== undefined ? { origin: line.origin } : {},

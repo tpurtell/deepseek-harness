@@ -19,7 +19,7 @@ import { assertV4ToolResultMessage } from './tool-role.ts'
 export function assertReleasedV4Header(header: unknown): void {
   if (!isSessionFormatJsonObject(header) || header['version'] !== 4) throw new SessionFormatError('expected format v4 header')
   const required = ['version', 'id', 'createdAt', 'isSeeded', 'delegationDepth']
-  const allowed = new Set([...required, 'cwd', 'parentSession', 'origin', 'agentPreset'])
+  const allowed = new Set([...required, 'cwd', 'cuteafd_workspace', 'parentSession', 'origin', 'agentPreset'])
   const missing = required.find(key => !Object.hasOwn(header, key))
   const unexpected = Object.keys(header).find(key => !allowed.has(key))
   if (missing !== undefined) throw new SessionFormatError(`format v4 header lacks required field ${missing}`)
@@ -30,6 +30,13 @@ export function assertReleasedV4Header(header: unknown): void {
   if (typeof header.isSeeded !== 'boolean') throw new SessionFormatError('format v4 header isSeeded must be boolean')
   if (header.cwd !== undefined && (typeof header.cwd !== 'string' || !isAbsolute(header.cwd))) {
     throw new SessionFormatError('format v4 header cwd must be absolute')
+  }
+  if (header.cuteafd_workspace !== undefined) {
+    const workspace = header.cuteafd_workspace
+    if (!isSessionFormatJsonObject(workspace) || Object.keys(workspace).sort().join(',') !== 'host,kind,path'
+      || workspace.kind !== 'cuteafd-ssh' || typeof workspace.host !== 'string' || !/^[a-zA-Z0-9][a-zA-Z0-9_.-]*$/.test(workspace.host)
+      || typeof workspace.path !== 'string' || !workspace.path.startsWith('/') || workspace.path.includes('\0')
+      || workspace.path !== header.cwd) throw new SessionFormatError('cuteafd_workspace must name a host and the absolute cwd')
   }
   for (const key of ['parentSession', 'agentPreset']) {
     if (header[key] !== undefined && typeof header[key] !== 'string') {

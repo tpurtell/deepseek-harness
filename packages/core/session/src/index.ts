@@ -115,6 +115,17 @@ function validateSessionHeader(id: SessionId, input: unknown): SessionHeader {
       throw new Error(`session header cwd must be an absolute path, got "${record.cwd}"`)
     }
   }
+  if (record.cuteafd_workspace !== undefined) {
+    const workspace = record.cuteafd_workspace
+    if (typeof workspace !== 'object' || workspace === null || Array.isArray(workspace)) {
+      throw new Error('cuteafd_workspace must be a remote workspace record')
+    }
+    const remote = workspace as Record<string, unknown>
+    if (Object.keys(remote).sort().join(',') !== 'host,kind,path' || remote.kind !== 'cuteafd-ssh'
+      || typeof remote.host !== 'string' || !/^[a-zA-Z0-9][a-zA-Z0-9_.-]*$/.test(remote.host)
+      || typeof remote.path !== 'string' || !remote.path.startsWith('/') || remote.path.includes('\0')
+      || remote.path !== record.cwd) throw new Error('cuteafd_workspace must name a host and the absolute cwd')
+  }
   if (record.parentSession !== undefined && typeof record.parentSession !== 'string') {
     throw new Error('session header parentSession must be a string')
   }
@@ -1176,6 +1187,7 @@ export class SessionStore extends Service {
       id: sessionId,
       createdAt: meta?.createdAt ?? Date.now(),
       ...meta?.cwd === undefined ? {} : { cwd: meta.cwd },
+      ...meta?.cuteafd_workspace === undefined ? {} : { cuteafd_workspace: structuredClone(meta.cuteafd_workspace) },
       ...meta?.parentSession === undefined ? {} : { parentSession: meta.parentSession },
       isSeeded: meta?.isSeeded ?? false,
       ...meta?.origin === undefined ? {} : { origin: meta.origin },
@@ -1391,6 +1403,7 @@ export class SessionStore extends Service {
       inheritedEventCount: SessionLogOffset(resolved === undefined ? 0 : resolved + 1),
       meta: {
         ...liveSource.header.cwd !== undefined ? { cwd: liveSource.header.cwd } : {},
+        ...liveSource.header.cuteafd_workspace !== undefined ? { cuteafd_workspace: structuredClone(liveSource.header.cuteafd_workspace) } : {},
         parentSession: liveSource.id,
         isSeeded: true,
       },
