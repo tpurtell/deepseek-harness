@@ -75,23 +75,22 @@ export function apply(ctx: Context, config: Config): void {
       render: (_args, value) => [{ type: 'text', text: value.files.map(file => `Presented ${file.path}`).join('\n') }],
     },
     async execute(args, exec) {
-      const executionCtx = exec.agent?.executionCtx ?? ctx
       if (exec.agent === undefined) throw new Error('present requires an agent Session')
-      const boundary = executionCtx.sessionProjections.stateOf(exec.agent.session, 'turnBoundary')
+      const boundary = ctx.sessionProjections.stateOf(exec.agent.session, 'turnBoundary')
       if (boundary === undefined || boundary.openTurnStartSeq === null) throw new Error('present requires an open turn')
       if (args.files.length === 0 || args.files.length > config.maxFiles) throw new Error(`present accepts 1 to ${config.maxFiles} files`)
-      const cwd = await executionCtx.workingDirectory.ensure(exec.agent, exec.signal)
+      const cwd = await ctx.workingDirectory.ensure(exec.agent, exec.signal)
       const options = { cwd, signal: exec.signal }
       const files: PresentedFile[] = []
       for (const file of args.files) {
         if (file.path.trim().length === 0) throw new Error('present requires a non-empty file path')
-        const entry = await executionCtx.fs.lstat(file.path, { cwd }, exec.signal)
+        const entry = await ctx.fs.lstat(file.path, { cwd }, exec.signal)
         if (entry !== undefined && entry.type !== 'file') throw new Error(`Cannot present ${file.path}: not a regular file`)
-        const target = await executionCtx.fs.resolve(file.path, options)
-        const info = await executionCtx.fs.stat(target, exec.signal)
+        const target = await ctx.fs.resolve(file.path, options)
+        const info = await ctx.fs.stat(target, exec.signal)
         if (info === undefined) throw new FsError(`Cannot present ${file.path}: file not found. Check the path, create the file if needed, and retry.`, 'FS_NOT_FOUND')
         if (info.type !== 'file') throw new Error(`Cannot present ${file.path}: not a regular file`)
-        files.push({ ...file, path: executionCtx.fs.processPath(target) })
+        files.push({ ...file, path: ctx.fs.processPath(target) })
       }
       exec.signal.throwIfAborted()
       pending.set(exec, { session: exec.agent.session, turn: boundary.lastTurn, files })

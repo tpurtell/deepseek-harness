@@ -110,26 +110,25 @@ export function applyWriteTool(ctx: Context, sandbox: FsSandboxController): void
       }),
     },
     async execute(args: WriteToolArgs, exec) {
-      const executionCtx = exec.agent?.executionCtx ?? ctx
       const input = parseWriteArgs(args)
       // Resolve the per-call sandbox policy (approved mode > session override
       // > backend default, plus the session cwd root) BEFORE anything executes;
       // an escalating call throws its distinct text on any non-grant.
       const sandboxPolicy = await sandbox.resolvePolicy('write', args, exec)
-      const target = await executionCtx.fs.resolve(input.filePath, await sessionResolveOptions(executionCtx, exec))
+      const target = await ctx.fs.resolve(input.filePath, await sessionResolveOptions(ctx, exec))
       // Single-slot decision: the policy plugin produces createIfAbsent/
       // replaceIfVersion; the bare default is undefined (unconditional). No stat.
-      const intent = await executionCtx.waterfall('fs/write-intent', target, exec, () => undefined)
+      const intent = await ctx.waterfall('fs/write-intent', target, exec, () => undefined)
       let outcome: FsWriteOutcome
       try {
-        outcome = await executionCtx.fs.writeText(target, input.content, intent, exec.signal, sandboxPolicy)
+        outcome = await ctx.fs.writeText(target, input.content, intent, exec.signal, sandboxPolicy)
       } catch (error: unknown) {
         // A sandbox denial becomes the shared [sandbox: …] marker (the model
         // recognizes it from bash); guarded mutation failures receive their
         // stable model-facing diagnostic; anything else passes through.
         throw remediateFsError(sandbox.mapError(error, sandboxPolicy), target.displayPath)
       }
-      return mutationResult(executionCtx, target, outcome, exec)
+      return mutationResult(ctx, target, outcome, exec)
     },
     // Pure display: a diff card. A call-time presenter has no access to prior
     // file content, so `oldText: null` also represents an overwrite here.
