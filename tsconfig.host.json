@@ -323,6 +323,7 @@
     { "path": "./packages/core/scope" },
     { "path": "./packages/typert/protocol" },
     { "path": "./packages/typert/registry" },
+    { "path": "./packages/cuteafd/execution-worlds" },
     { "path": "./packages/api/gateway/tsconfig.host.json" },
     { "path": "./packages/api/remotes/tsconfig.host.json" },
     { "path": "./packages/api/job-controller/tsconfig.host.json" },
