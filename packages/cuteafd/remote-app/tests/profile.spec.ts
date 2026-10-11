@@ -38,6 +38,7 @@ it('removes local execution and creator/model-install rows but retains operator 
   expect(names.has('@cuteafd/dsh-hosts')).toBe(true)
   expect(names.has('@cuteafd/dsh-ui-hosts')).toBe(true)
   expect(all.some(row => row.id === 'directory-picker')).toBe(false)
+  expect(all.some(row => row.id === 'ui-deliverables')).toBe(false)
   expect(all.find(row => row.id === 'web-runtime')?.config).toMatchObject({ openBrowser: false, printUrl: false })
   expect(all.find(row => row.id === 'connection')?.config.launchTokenFile).toBe('/agent/dsh/launch-token')
   const permission = all.find(row => row.id === 'permission')
