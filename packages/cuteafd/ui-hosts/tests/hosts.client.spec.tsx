@@ -28,13 +28,17 @@ it('activates with a self-mounted Remote namespace and disposes it with the brow
   const { api } = fixture()
   await ctx.plugin(SlotRegistry).await()
   const unmount = vi.fn()
-  ctx.provide('remote', { $mount: vi.fn(async () => {
-    const dispose = ctx.reflect.provide('remote.cuteafdHosts', api)
-    return () => { unmount(); dispose() }
-  }) } as never)
+  ctx.provide('remote', {
+    get cuteafdHosts() { throw new Error('cannot get property "remote.cuteafdHosts" without inject') },
+    $mount: vi.fn(async () => {
+      const dispose = ctx.reflect.provide('remote.cuteafdHosts', api)
+      return () => { unmount(); dispose() }
+    }),
+  } as never)
   const fiber = ctx.plugin({ inject, apply })
   try {
     await fiber.await()
+    expect(fiber.state).toBe(2)
     expect(ctx.get('remote.cuteafdHosts')).toBeDefined()
     await fiber.dispose()
     expect(unmount).toHaveBeenCalledOnce()
