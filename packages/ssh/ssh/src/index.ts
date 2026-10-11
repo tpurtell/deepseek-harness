@@ -33,6 +33,8 @@ export type HelperLaunch = {
 export interface Config {
   /** OpenSSH host alias, including its existing user, key and known-host configuration. */
   host: string
+  /** Deployment-owned OpenSSH configuration; never supplied by a model tool. */
+  configFile?: string
   /** Explicit script or self-contained executable invocation. */
   launch: HelperLaunch
   /** Absolute path to the installed, bundled helper entry. */
@@ -58,7 +60,7 @@ declare module '@deepseek-ai/cordis' {
 /** One non-reconnecting SSH session; loss invalidates all active operations. */
 export class SshConnection extends Service {
   static Config: schema<Config> = schema.object({
-    host: schema.string().required(), helper: schema.string().required(),
+    host: schema.string().required(), configFile: schema.string(), helper: schema.string().required(),
     launch: schema.union([
       schema.object({ kind: schema.const('node-script').required(), node: schema.string().required(), bootstrapPath: schema.string(), bootstrapHash: schema.string() }),
       schema.object({ kind: schema.const('executable').required() }),
@@ -90,6 +92,7 @@ export class SshConnection extends Service {
     if (process.platform !== 'linux' && process.platform !== 'darwin') throw new Error('SSH runtime requires a POSIX client')
     this.config = z.object({
       host: z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9_.@-]*$/),
+      configFile: z.string().startsWith('/').refine(value => !/[\r\n\0]/u.test(value)).optional(),
       launch: z.discriminatedUnion('kind', [
         z.object({ kind: z.literal('node-script'), node: z.string().startsWith('/'),
           bootstrapPath: z.string().startsWith('/').optional(), bootstrapHash: z.string().regex(/^[0-9a-f]{64}$/).optional(),
@@ -248,7 +251,7 @@ export class SshConnection extends Service {
     const combined = AbortSignal.any(signals)
     combined.throwIfAborted()
     const result = Promise.withResolvers<undefined>()
-    const command = execFile('ssh', ['-S', this.controlPath(), ...args, this.config.host], {
+    const command = execFile('ssh', [...this.configArguments(), '-S', this.controlPath(), ...args, this.config.host], {
       signal: combined, maxBuffer: 64 * 1024,
     }, (error) => { if (error === null) result.resolve(undefined); else result.reject(error) })
     const closed = new Promise<void>((resolve) => { command.once('close', () => { resolve() }) })
@@ -276,6 +279,10 @@ export class SshConnection extends Service {
     this.child?.kill('SIGTERM')
   }
 
+  private configArguments(): string[] {
+    return this.config.configFile === undefined ? [] : ['-F', this.config.configFile]
+  }
+
   private async start(): Promise<Hello> {
     this.directory = await mkdtemp('/tmp/dsh-ssh-')
     if (this.closed) throw new Error('SSH connection closed before startup')
@@ -296,10 +303,11 @@ export class SshConnection extends Service {
       /* v8 ignore next -- Config parsing admits only these two launch kinds. */
       default: return assertNever(launch)
     }
+    command = `exec "$SHELL" -l -c ${quote(command)}`
     const child = spawn('ssh', [
-      '-T', '-M', '-S', this.controlPath(), '-o', 'ControlPersist=no', '-o', 'BatchMode=yes',
-      '-o', 'StrictHostKeyChecking=yes', '-o', 'ForwardAgent=no', '-o', 'ClearAllForwardings=yes',
-      '-o', 'ServerAliveInterval=10', '-o', 'ServerAliveCountMax=3', this.config.host, command,
+      ...this.configArguments(), '-T', '-M', '-S', this.controlPath(), '-o', 'ControlPersist=no', '-o', 'BatchMode=yes',
+      '-o', 'IdentitiesOnly=yes', '-o', 'StrictHostKeyChecking=yes', '-o', 'ForwardAgent=no', '-o', 'ClearAllForwardings=yes',
+      '-o', 'ConnectTimeout=10', '-o', 'ServerAliveInterval=5', '-o', 'ServerAliveCountMax=2', this.config.host, command,
     ], { stdio: ['pipe', 'pipe', 'pipe'] })
     this.child = child
     this.childClosed = new Promise((resolve) => { child.once('close', () => { resolve() }) })
