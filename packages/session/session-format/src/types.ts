@@ -18,6 +18,7 @@ export interface SessionFormatHeader extends SessionFormatJsonObject {
   readonly id: string
   readonly createdAt: number
   readonly cwd?: string
+  readonly cuteafd_workspace?: { readonly kind: 'cuteafd-ssh'; readonly host: string; readonly path: string }
   readonly parentSession?: string
   readonly isSeeded: boolean
   readonly origin?: 'subagent'

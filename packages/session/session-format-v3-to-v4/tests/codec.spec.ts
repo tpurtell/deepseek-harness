@@ -19,6 +19,15 @@ function restore(events: readonly SessionFormatEvent[], sourceHeader = header) {
 }
 
 describe('V4 framing and restoration', () => {
+  it('round trips a namespaced remote identity and refuses it in a predecessor reader', () => {
+    const remote = { ...header, cwd: '/work', cuteafd_workspace: { kind: 'cuteafd-ssh' as const, host: 'moa', path: '/work' } }
+    const physical = releasedV4SessionFormatCodec.encodeHeader(remote, 0)
+    expect(releasedV4SessionFormatCodec.decodeHeader(physical)).toEqual(remote)
+    expect(releasedV4SessionFormatCodec.createDecoder(physical, 'strict').header).toEqual(remote)
+    expect(() => releasedV2SessionFormatCodec.decodeHeader({ ...physical, version: 2 })).toThrow(/field|member/)
+    expect(() => assertReleasedV4Header({ ...remote, cwd: '/elsewhere' })).toThrow('cuteafd_workspace')
+    expect(() => assertReleasedV4Header({ ...remote, cuteafd_workspace: { host: 'moa', path: '/work' } })).toThrow('cuteafd_workspace')
+  })
   it('reuses released V2 physical framing and round trips native V4 rows', () => {
     const physical = releasedV4SessionFormatCodec.encodeHeader(header, 0)
     expect(physical).toEqual({ type: 'session', ...header })

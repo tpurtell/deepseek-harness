@@ -103,6 +103,8 @@ export interface SessionHeader {
   readonly createdAt: number
   /** Absolute working directory the session was created in (if any). */
   readonly cwd?: string
+  /** Fork-owned remote identity; cwd remains the plain remote path. */
+  readonly cuteafd_workspace?: { readonly kind: 'cuteafd-ssh'; readonly host: string; readonly path: string }
   /** The session this one was forked from (seed lineage), if any. */
   readonly parentSession?: SessionId
   /**
@@ -150,6 +152,8 @@ export interface CreateSessionOptions {
    */
   readonly meta?: {
     readonly cwd?: string
+  /** Fork-owned remote identity; cwd remains the plain remote path. */
+  readonly cuteafd_workspace?: { readonly kind: 'cuteafd-ssh'; readonly host: string; readonly path: string }
     readonly parentSession?: SessionId
     readonly createdAt?: number
     readonly isSeeded?: boolean

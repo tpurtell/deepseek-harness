@@ -13,7 +13,15 @@ import { assertReleasedV4Header } from './validation.ts'
 
 function physicalV2(value: unknown): SessionFormatHeader {
   if (!isSessionFormatJsonObject(value) || value['version'] !== 4) throw new SessionFormatError('expected format v4 physical header')
-  return { ...value, version: 2 } as SessionFormatHeader
+  const { cuteafd_workspace: _workspace, ...header } = value
+  return { ...header, version: 2 } as SessionFormatHeader
+}
+
+function remoteFields(value: unknown): Pick<SessionFormatHeader, 'cuteafd_workspace'> {
+  if (!isSessionFormatJsonObject(value) || value.cuteafd_workspace === undefined) return {}
+  const { type: _type, ...header } = value
+  assertReleasedV4Header(header)
+  return { cuteafd_workspace: header.cuteafd_workspace as NonNullable<SessionFormatHeader['cuteafd_workspace']> }
 }
 
 /**
@@ -23,13 +31,13 @@ function physicalV2(value: unknown): SessionFormatHeader {
 export const releasedV4SessionFormatCodec = Object.freeze({
   version: 4,
   decodeHeader(value: unknown) {
-    return { ...releasedV2SessionFormatCodec.decodeHeader(physicalV2(value)), version: 4 }
+    return { ...releasedV2SessionFormatCodec.decodeHeader(physicalV2(value)), ...remoteFields(value), version: 4 }
   },
   createDecoder(value, recovery) {
     const decoder = releasedV2SessionFormatCodec.createDecoder(physicalV2(value), recovery)
     return {
       ...decoder,
-      header: { ...decoder.header, version: 4 },
+      header: { ...decoder.header, ...remoteFields(value), version: 4 },
       decodeRow(row, context) {
         assertV4RowAdmission(row)
         decoder.decodeRow(row, {
@@ -41,7 +49,9 @@ export const releasedV4SessionFormatCodec = Object.freeze({
   },
   encodeHeader(header, inheritedEventCount) {
     assertReleasedV4Header(header)
-    return { ...releasedV2SessionFormatCodec.encodeHeader({ ...header, version: 2 }, inheritedEventCount), version: 4 }
+    const { cuteafd_workspace, ...legacy } = header
+    return { ...releasedV2SessionFormatCodec.encodeHeader({ ...legacy, version: 2 }, inheritedEventCount),
+      ...(cuteafd_workspace === undefined ? {} : { cuteafd_workspace }), version: 4 }
   },
   encodeEvent(event: SessionFormatEvent) {
     if (event.type === 'developer/message' && event['ignorable'] === true) {
