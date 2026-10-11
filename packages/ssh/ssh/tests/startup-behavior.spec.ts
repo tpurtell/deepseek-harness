@@ -132,6 +132,15 @@ function setup(options: {
 }
 
 describe.skipIf(process.platform === 'win32')('SSH connection startup', () => {
+  it('uses only the deployment-owned config for master and forwarded channels', async () => {
+    const test = setup({ config: { configFile: '/agent/.ssh/ssh_config' } })
+    await test.service.ready
+    expect(transport.spawn.mock.calls[0]?.[1].slice(0, 2)).toEqual(['-F', '/agent/.ssh/ssh_config'])
+    const socket = await test.service.connectStream({ path: '/tmp/remote-helper/stream', capability: 'a'.repeat(64) } as never)
+    expect(transport.exec.mock.calls[0]?.[1].slice(0, 2)).toEqual(['-F', '/agent/.ssh/ssh_config'])
+    socket.destroy()
+  })
+
   it.each([
     { host: '-option' }, { host: 'alias; command' }, { launch: { kind: 'node-script', node: 'relative' } }, { helperHash: 'bad' },
     { launch: { kind: 'node-script', node: '/remote/node', bootstrapPath: '/remote/bootstrap.js' } }, { launch: { kind: 'node-script', node: '/remote/node', bootstrapHash: 'b'.repeat(64) } },
@@ -159,7 +168,11 @@ describe.skipIf(process.platform === 'win32')('SSH connection startup', () => {
     const argv = transport.spawn.mock.calls[0]?.[1] as string[]
     expect(argv).toContain('StrictHostKeyChecking=yes')
     expect(argv).toContain('ForwardAgent=no')
-    expect(argv.at(-1)).toBe("'/remote/node' '--disable-sigusr1' '/remote/helper'\\''s file.js'")
+    const quote = (value: string) => `'${value.replaceAll("'", "'\\''")}'`
+    expect(argv.at(-1)).toBe(`exec "$SHELL" -l -c ${quote("'/remote/node' '--disable-sigusr1' '/remote/helper'\\''s file.js'")}`)
+    expect(argv).toContain('IdentitiesOnly=yes')
+    expect(argv).toContain('ConnectTimeout=10')
+    expect(argv).toContain('ServerAliveInterval=5')
     expect(test.calls[0]?.params).toEqual({ protocol: 2, workspace: '/remote/workspace', leaseMs: 30_000, bootstrapPath: '/remote/process.js' })
   })
 
@@ -178,7 +191,8 @@ describe.skipIf(process.platform === 'win32')('SSH connection startup', () => {
     await test.service.ready
     expect(test.service.ptcLaunch).toEqual({ kind: 'embedded', executable: '/canonical/dsh-ssh-helper' })
     const argv = transport.spawn.mock.calls[0]?.[1] as string[]
-    expect(argv.at(-1)).toBe("NODE_OPTIONS='--disable-sigusr1' '/remote/helper with spaces'")
+    const quote = (value: string) => `'${value.replaceAll("'", "'\\''")}'`
+    expect(argv.at(-1)).toBe(`exec "$SHELL" -l -c ${quote("NODE_OPTIONS='--disable-sigusr1' '/remote/helper with spaces'")}`)
     expect(test.calls[0]?.params).toEqual({ protocol: 2, workspace: '/remote/workspace', leaseMs: 30_000 })
   })
 
