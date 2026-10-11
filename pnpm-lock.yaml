@@ -7428,6 +7428,18 @@ importers:
         specifier: workspace:*
         version: link:../../host/webserver
 
+  packages/cuteafd/admin:
+    dependencies:
+      '@deepseek-ai/cordis':
+        specifier: workspace:~
+        version: link:../../../vendor/cordis
+      '@deepseek-ai/dsh-credentials':
+        specifier: workspace:*
+        version: link:../../credentials/credentials
+      '@deepseek-ai/dsh-credentials-local':
+        specifier: workspace:*
+        version: link:../../credentials/credentials-local
+
   packages/cuteafd/execution-worlds:
     dependencies:
       '@deepseek-ai/cordis':
