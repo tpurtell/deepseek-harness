@@ -57,10 +57,10 @@ describe('Workspace Files Session scope lookup', () => {
       })
       if (lookup === undefined) throw new Error('workspaceFileScope lookup did not register')
 
-      await expect(lookup.resolve(liveId)).resolves.toEqual({ sessionId: liveId, workspaceRoot: liveRoot })
+      await expect(lookup.resolve(liveId)).resolves.toEqual({ sessionId: liveId, workspaceRoot: liveRoot, executionHeader: ctx.sessions.get(liveId)!.header })
       expect(stat).not.toHaveBeenCalled()
-      await expect(lookup.resolve(coldId)).resolves.toEqual({ sessionId: coldId, workspaceRoot: coldRoot })
-      await expect(lookup.resolve(fallbackId)).resolves.toEqual({ sessionId: fallbackId, workspaceRoot: fallbackRoot })
+      await expect(lookup.resolve(coldId)).resolves.toEqual({ sessionId: coldId, workspaceRoot: coldRoot, executionHeader: header(coldId, coldRoot) })
+      await expect(lookup.resolve(fallbackId)).resolves.toEqual({ sessionId: fallbackId, workspaceRoot: fallbackRoot, executionHeader: header(fallbackId) })
       await expect(lookup.resolve(missingId)).resolves.toBeUndefined()
       expect(stat.mock.calls.map(([id]) => id)).toEqual([coldId, fallbackId, missingId])
 
