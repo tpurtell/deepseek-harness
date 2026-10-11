@@ -1,4 +1,5 @@
 /** Versioned archive metadata and file integrity checks for SSH helper releases. */
+import { execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { lstat, readFile, readdir } from 'node:fs/promises'
 import { join, relative, sep } from 'node:path'
@@ -32,6 +33,19 @@ export const runtimeReportSchema = z.object({
   checks: z.array(z.string()), platform: z.enum(['linux', 'darwin']), nodeVersion: z.string(),
   sandboxLane: z.enum(['required', 'unavailable', 'portable']),
 }).strict()
+
+/** Resolve source provenance before compilation, including source copies without Git metadata. */
+export function helperSourceProvenance(root: string, environment: NodeJS.ProcessEnv = process.env): { commit: string; dirty: boolean } {
+  const commit = environment.DSH_SOURCE_COMMIT
+  const dirty = environment.DSH_SOURCE_DIRTY
+  if (commit !== undefined || dirty !== undefined) {
+    if (commit === undefined || !/^[a-f0-9]{40}$/u.test(commit)) throw new Error('DSH_SOURCE_COMMIT requires a full lowercase Git hash')
+    if (dirty !== 'true' && dirty !== 'false') throw new Error('DSH_SOURCE_DIRTY requires true or false')
+    return { commit, dirty: dirty === 'true' }
+  }
+  const git = (args: string[]): string => execFileSync('git', args, { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim()
+  return { commit: git(['rev-parse', 'HEAD']), dirty: git(['status', '--porcelain']) !== '' }
+}
 
 /** Parsed release metadata; files excludes manifest.json to avoid a self-referential digest. */
 export type ArtifactManifest = z.infer<typeof artifactManifestSchema>
