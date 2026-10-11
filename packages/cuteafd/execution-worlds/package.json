@@ -5,7 +5,13 @@
   "type": "module",
   "main": "lib/index.js",
   "types": "lib/types/index.d.ts",
-  "exports": { ".": { "types": "./lib/types/index.d.ts", "default": "./lib/index.js" }, "./src/*": "./src/*" },
+  "exports": {
+    ".": {
+      "types": "./lib/types/index.d.ts",
+      "default": "./lib/index.js"
+    },
+    "./src/*": "./src/*"
+  },
   "license": "MIT",
   "dependencies": {
     "@deepseek-ai/cordis": "workspace:~",
@@ -20,6 +26,10 @@
     "@deepseek-ai/dsh-subprocess-ssh": "workspace:*",
     "@deepseek-ai/dsh-sandbox-ssh": "workspace:*",
     "@deepseek-ai/dsh-session": "workspace:*",
-    "@deepseek-ai/dsh-tools": "workspace:*"
+    "@deepseek-ai/dsh-tools": "workspace:*",
+    "@deepseek-ai/dsh-shell": "workspace:*",
+    "@deepseek-ai/dsh-bash-sandbox": "workspace:*",
+    "@deepseek-ai/dsh-ptc-runtime": "workspace:*",
+    "@deepseek-ai/dsh-ptc-runtime-node": "workspace:*"
   }
 }

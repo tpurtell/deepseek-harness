@@ -1,20 +1,63 @@
 {
   "extends": "../../../tsconfig.base.json",
-  "compilerOptions": { "rootDir": "src", "outDir": "lib/types" },
-  "include": ["src"],
+  "compilerOptions": {
+    "rootDir": "src",
+    "outDir": "lib/types"
+  },
+  "include": [
+    "src"
+  ],
   "references": [
-    { "path": "../../../vendor/cordis" },
-    { "path": "../../core/agent" },
-    { "path": "../../fs/fs" },
-    { "path": "../../subprocess/subprocess" },
-    { "path": "../../sandbox/sandbox" },
-    { "path": "../../sandbox/sandbox-policy" },
-    { "path": "../../ssh/ssh" },
-    { "path": "../../ssh/fs-ssh" },
-    { "path": "../../ssh/subprocess-ssh" },
-    { "path": "../../ssh/sandbox-ssh" },
-    { "path": "../../core/session" },
-    { "path": "../../core/tools" },
-    { "path": "../../api/gateway/tsconfig.host.json" }
+    {
+      "path": "../../../vendor/cordis"
+    },
+    {
+      "path": "../../core/agent"
+    },
+    {
+      "path": "../../fs/fs"
+    },
+    {
+      "path": "../../subprocess/subprocess"
+    },
+    {
+      "path": "../../sandbox/sandbox"
+    },
+    {
+      "path": "../../sandbox/sandbox-policy"
+    },
+    {
+      "path": "../../ssh/ssh"
+    },
+    {
+      "path": "../../ssh/fs-ssh"
+    },
+    {
+      "path": "../../ssh/subprocess-ssh"
+    },
+    {
+      "path": "../../ssh/sandbox-ssh"
+    },
+    {
+      "path": "../../core/session"
+    },
+    {
+      "path": "../../core/tools"
+    },
+    {
+      "path": "../../api/gateway/tsconfig.host.json"
+    },
+    {
+      "path": "../../shell/shell"
+    },
+    {
+      "path": "../../shell/bash-sandbox"
+    },
+    {
+      "path": "../../ptc-runtime/ptc-runtime"
+    },
+    {
+      "path": "../../ptc-runtime/ptc-runtime-node"
+    }
   ]
 }

@@ -3,8 +3,10 @@ import { describe, expect, it, vi } from 'vitest'
 import type { FileSystem } from '@deepseek-ai/dsh-fs'
 import type { SubprocessRuntime } from '@deepseek-ai/dsh-subprocess'
 import type { SandboxProvider } from '@deepseek-ai/dsh-sandbox'
+import type { ShellExecutor } from '@deepseek-ai/dsh-shell'
+import type { PtcRuntime } from '@deepseek-ai/dsh-ptc-runtime'
 import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
-import { ExecutionWorlds, NoExecutionWorldError, requireRemoteWorkspace, WorldFileSystem, WorldSandbox, WorldSubprocess, type ExecutionWorld } from '../src/index.ts'
+import { ExecutionWorlds, NoExecutionWorldError, requireRemoteWorkspace, WorldFileSystem, WorldSandbox, WorldSubprocess, WorldShell, WorldPtcRuntime, type ExecutionWorld } from '../src/index.ts'
 
 function recordingWorld(host: string): { world: ExecutionWorld; calls: string[] } {
   const calls: string[] = []
@@ -13,7 +15,7 @@ function recordingWorld(host: string): { world: ExecutionWorld; calls: string[] 
       return (..._args: unknown[]) => { calls.push(`${kind}.${String(method)}`); return `${host}:${String(method)}` }
     },
   })
-  return { calls, world: { host, path: '/work', fs: recorder('fs') as FileSystem, subprocess: recorder('subprocess') as SubprocessRuntime, sandbox: recorder('sandbox') as SandboxProvider } }
+  return { calls, world: { host, path: '/work', fs: recorder('fs') as FileSystem, subprocess: recorder('subprocess') as SubprocessRuntime, sandbox: recorder('sandbox') as SandboxProvider, shell: recorder('shell') as ShellExecutor, ptcRuntime: recorder('ptc') as PtcRuntime } }
 }
 
 describe('remote execution boundary', () => {
@@ -49,7 +51,7 @@ describe('remote execution boundary', () => {
     const ctx = new Context()
     await ctx.plugin(SessionStore)
     ctx.provide('sandboxPolicy', { defaultMode: 'read-only' } as never)
-    const fibers = [await ctx.plugin(ExecutionWorlds), await ctx.plugin(WorldFileSystem), await ctx.plugin(WorldSubprocess), await ctx.plugin(WorldSandbox)]
+    const fibers = [await ctx.plugin(ExecutionWorlds), await ctx.plugin(WorldFileSystem), await ctx.plugin(WorldSubprocess), await ctx.plugin(WorldSandbox), await ctx.plugin(WorldShell), await ctx.plugin(WorldPtcRuntime)]
     try {
       const { world, calls } = recordingWorld('moa')
       const operations = [
@@ -63,6 +65,8 @@ describe('remote execution boundary', () => {
         () => ctx.subprocess.resolveExecutable('rg'), () => ctx.subprocess.terminalEnvironment(),
         () => ctx.subprocess.spawn({} as never), () => ctx.subprocess.spawnTerminal({} as never),
         () => ctx.sandbox.confine([], {} as never),
+        () => ctx.shell.resolve({} as never), () => ctx.shell.execute({} as never),
+        () => ctx.ptcRuntime.resolve({} as never), () => ctx.ptcRuntime.run({} as never),
       ]
       for (const operation of operations) {
         expect(operation).toThrow(NoExecutionWorldError)
