@@ -7,6 +7,7 @@
  */
 
 import { lstat, readdir } from 'node:fs/promises'
+import type { Dirent, Stats } from 'node:fs'
 import { isAbsolute, join, relative, resolve, sep } from 'node:path'
 import type { FileReferenceCandidate } from '@deepseek-ai/dsh-file-reference'
 
@@ -56,6 +57,19 @@ export interface FileSearchConfig {
   excludedDirectories: readonly string[]
 }
 
+/** Filesystem capability used by an index without changing its ranking rules. */
+export interface FileSearchBackend {
+  /** Remote failures must remain visible instead of masquerading as empty folders. */
+  propagateErrors?: boolean
+  readDirectory(path: string, signal: AbortSignal): Promise<Pick<Dirent, 'name' | 'isDirectory' | 'isFile'>[]>
+  inspect(path: string, signal: AbortSignal): Promise<Pick<Stats, 'isSymbolicLink' | 'isDirectory'>>
+}
+
+const localBackend: FileSearchBackend = {
+  async readDirectory(path, signal) { signal.throwIfAborted(); return readdir(path, { withFileTypes: true }) },
+  async inspect(path, signal) { signal.throwIfAborted(); return lstat(path) },
+}
+
 interface IndexedPath extends FileReferenceCandidate {}
 
 interface RankedPath {
@@ -92,6 +106,7 @@ export class WorkspaceFileSearch {
   constructor(
     private readonly root: string,
     private readonly config: FileSearchConfig,
+    private readonly backend: FileSearchBackend = localBackend,
   ) {
     if (!Number.isSafeInteger(config.maxResults) || config.maxResults <= 0) {
       throw new Error('file search maxResults must be a positive safe integer')
@@ -213,8 +228,8 @@ export class WorkspaceFileSearch {
       // nothing. Letting that settle would publish an empty index over
       // entries that are still good and leave no invalidation to retry from.
       const entries = cursor === 0
-        ? await readWorkspaceRoot(directory.absolute, signal)
-        : await readDirectory(directory.absolute, signal)
+        ? await readWorkspaceRoot(directory.absolute, signal, this.backend)
+        : await readDirectory(directory.absolute, signal, this.backend)
       for (const entry of entries) {
         signal.throwIfAborted()
         const path = directory.relative === '' ? entry.name : `${directory.relative}/${entry.name}`
@@ -237,9 +252,9 @@ export class WorkspaceFileSearch {
     signal: AbortSignal,
   ): Promise<FileReferenceCandidate[]> {
     if (displayDirectory.split('/').some(segment => this.excludedDirectories.has(segment))) return []
-    const absolute = await resolveDisplayDirectory(this.root, displayDirectory, signal)
+    const absolute = await resolveDisplayDirectory(this.root, displayDirectory, signal, this.backend)
     if (absolute === undefined) return []
-    const entries = await readDirectory(absolute, signal)
+    const entries = await readDirectory(absolute, signal, this.backend)
     const candidates: FileReferenceCandidate[] = []
     for (const entry of entries) {
       if (entry.name.startsWith('.') && !fragment.startsWith('.')) continue
@@ -258,6 +273,7 @@ async function resolveDisplayDirectory(
   root: string,
   displayDirectory: string,
   signal: AbortSignal,
+  backend: FileSearchBackend,
 ): Promise<string | undefined> {
   const resolvedRoot = resolve(root)
   const absolute = resolve(resolvedRoot, displayDirectory === '' ? '.' : displayDirectory)
@@ -270,33 +286,35 @@ async function resolveDisplayDirectory(
     signal.throwIfAborted()
     current = join(current, segment)
     try {
-      const status = await lstat(current)
+      const status = await backend.inspect(current, signal)
       signal.throwIfAborted()
       if (status.isSymbolicLink() || !status.isDirectory()) return undefined
-    } catch (_error: unknown) {
+    } catch (error: unknown) {
       signal.throwIfAborted()
+      if (backend.propagateErrors) throw error
       return undefined
     }
   }
   return absolute
 }
 
-async function readWorkspaceRoot(absolute: string, signal: AbortSignal) {
+async function readWorkspaceRoot(absolute: string, signal: AbortSignal, backend: FileSearchBackend) {
   signal.throwIfAborted()
-  const entries = await readdir(absolute, { withFileTypes: true })
+  const entries = await backend.readDirectory(absolute, signal)
   signal.throwIfAborted()
   return entries.sort((left, right) => compareText(left.name, right.name))
 }
 
-async function readDirectory(absolute: string, signal: AbortSignal) {
+async function readDirectory(absolute: string, signal: AbortSignal, backend: FileSearchBackend) {
   signal.throwIfAborted()
   try {
-    const entries = await readdir(absolute, { withFileTypes: true })
+    const entries = await backend.readDirectory(absolute, signal)
     signal.throwIfAborted()
     return entries.sort((left, right) => compareText(left.name, right.name))
-  } catch (_error: unknown) {
+  } catch (error: unknown) {
     /* v8 ignore start -- Windows chmod cannot make the unreadable-directory fixture fail readdir; POSIX behavior covers this fallback. */
     signal.throwIfAborted()
+    if (backend.propagateErrors) throw error
     // An unreadable/missing subtree contributes no candidates; other readable
     // branches remain useful and autocomplete is advisory.
     return []

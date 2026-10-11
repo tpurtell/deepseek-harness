@@ -18,6 +18,7 @@ const roots: string[] = []
 
 afterEach(async () => {
   vi.restoreAllMocks()
+  vi.unstubAllEnvs()
   await Promise.all(roots.splice(0).map(root => rm(root, { recursive: true, force: true })))
 })
 
@@ -61,6 +62,58 @@ async function stubAgent(
 }
 
 describe('LocalFileReferenceService', () => {
+  it('discovers remote candidates through capabilities without following symlinks or reading contents', async () => {
+    const ctx = await harness()
+    try {
+      const { agent } = await stubAgent(ctx, 'remote-completion')
+      const remote = '/remote-only/nonexistent-on-container'
+      const identity = { kind: 'cuteafd-ssh' as const, host: 'rhea', path: remote }
+      const session = ctx.sessions.create(SessionId('remote-capability'), { meta: { cwd: remote, cuteafd_workspace: identity } })
+      const addressed = { ...agent, session } as Agent
+      vi.spyOn(ctx.workingDirectory, 'ensure').mockResolvedValue(remote)
+      const resolve = vi.spyOn(ctx.fs, 'resolve').mockImplementation(async path => ({ targetKey: path as never, displayPath: path }))
+      const list = vi.spyOn(ctx.fs, 'listDir').mockImplementation(async target => {
+        const names = target.displayPath === remote ? ['src', 'escape', 'README.md'] : ['remote.ts']
+        return names.map(name => ({ name, type: name.includes('.') ? 'file' : 'directory', target: { targetKey: `${target.displayPath}/${name}` as never, displayPath: `${target.displayPath}/${name}` } }))
+      })
+      const inspect = vi.spyOn(ctx.fs, 'lstat').mockImplementation(async path => ({ version: 'test' as never, type: path.endsWith('/escape') ? 'symlink' : path.endsWith('/src') ? 'directory' : 'file' }))
+      const read = vi.spyOn(ctx.fs, 'readText')
+      await ctx.plugin(LocalFileReferenceService)
+      const signal = new AbortController().signal
+      expect(await ctx.fileReferences.list(addressed, '', signal)).toEqual([{ path: 'src', kind: 'directory' }, { path: 'README.md', kind: 'file' }])
+      expect(await ctx.fileReferences.list(addressed, 'remote', signal)).toEqual([{ path: 'src/remote.ts', kind: 'file' }])
+      expect(await ctx.fileReferences.list(addressed, 'src/', signal)).toEqual([{ path: 'src/remote.ts', kind: 'file' }])
+      expect(await ctx.fileReferences.list(addressed, 'escape/', signal)).toEqual([])
+      expect(await ctx.fileReferences.list(addressed, '../', signal)).toEqual([])
+      expect(list.mock.calls.every(([target]) => target.displayPath === remote || target.displayPath === `${remote}/src`)).toBe(true)
+      expect(resolve).toHaveBeenCalledWith(remote, { signal })
+      expect(inspect).toHaveBeenCalledWith(`${remote}/escape`, undefined, signal)
+      expect(read).not.toHaveBeenCalled()
+      list.mockRejectedValue(new Error('SSH host unavailable'))
+      await expect(ctx.fileReferences.list(addressed, '', signal)).rejects.toThrow('SSH host unavailable')
+      inspect.mockRejectedValue(new Error('SSH probe unavailable'))
+      await expect(ctx.fileReferences.list(addressed, 'src/', signal)).rejects.toThrow('SSH probe unavailable')
+      const aborted = AbortSignal.abort(new Error('cancel completion'))
+      await expect(ctx.fileReferences.list(addressed, '', aborted)).rejects.toThrow('cancel completion')
+    } finally {
+      await ctx.fiber.dispose()
+    }
+  })
+
+  it('rejects an unbound session before touching the filesystem in remote-only mode', async () => {
+    const ctx = await harness()
+    try {
+      const { agent } = await stubAgent(ctx, 'unbound-completion')
+      await ctx.plugin(LocalFileReferenceService)
+      const ensure = vi.spyOn(ctx.workingDirectory, 'ensure')
+      vi.stubEnv('DSH_REMOTE_ONLY', '1')
+      await expect(ctx.fileReferences.list(agent, '', new AbortController().signal)).rejects.toThrow('session SSH workspace')
+      expect(ensure).not.toHaveBeenCalled()
+    } finally {
+      await ctx.fiber.dispose()
+    }
+  })
+
   it('defers guidance until optional prompt and tool services become available', async () => {
     const ctx = new Context()
     await ctx.plugin(SessionStore)

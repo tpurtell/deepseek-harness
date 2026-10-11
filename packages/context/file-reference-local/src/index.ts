@@ -5,6 +5,7 @@
  */
 
 import type {} from '@deepseek-ai/dsh-working-directory'
+import type {} from '@deepseek-ai/dsh-fs'
 import { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import type { Agent } from '@deepseek-ai/dsh-agent'
@@ -52,6 +53,31 @@ export class LocalFileReferenceService extends FileReferenceService {
 
   private readonly config: FileSearchConfig
   private readonly searches = new Map<Agent, { cwd: string; search: WorkspaceFileSearch }>()
+  private readonly remoteBackend = {
+    propagateErrors: true,
+    readDirectory: async (path: string, signal: AbortSignal) => {
+      signal.throwIfAborted()
+      const fs = this.ctx.get('fs')
+      if (fs === undefined) throw new Error('remote file references require a filesystem capability')
+      const entries = await fs.listDir(await fs.resolve(path, { signal }), signal)
+      const discovered = []
+      for (const entry of entries) {
+        // Capability listings resolve symlinks; completion must not follow them.
+        const info = await fs.lstat(`${path}/${entry.name}`, undefined, signal)
+        signal.throwIfAborted()
+        discovered.push({ name: entry.name, isDirectory: () => info?.type === 'directory', isFile: () => info?.type === 'file' })
+      }
+      return discovered
+    },
+    inspect: async (path: string, signal: AbortSignal) => {
+      signal.throwIfAborted()
+      const fs = this.ctx.get('fs')
+      if (fs === undefined) throw new Error('remote file references require a filesystem capability')
+      const info = await fs.lstat(path, undefined, signal)
+      signal.throwIfAborted()
+      return { isSymbolicLink: () => info?.type === 'symlink', isDirectory: () => info?.type === 'directory' }
+    },
+  }
   private readonly promptFibers = new Map<Agent, ReturnType<Context['inject']>>()
   private readonly promptDisposals = new Set<Promise<void>>()
 
@@ -118,11 +144,12 @@ export class LocalFileReferenceService extends FileReferenceService {
     query: string,
     signal: AbortSignal,
   ): Promise<FileReferenceCandidate[]> {
+    if (process.env.DSH_REMOTE_ONLY === '1' && agent.session.header.cuteafd_workspace === undefined) throw new Error('remote file references require a session SSH workspace')
     const cwd = await this.ctx.workingDirectory.ensure(agent, signal)
     let cached = this.searches.get(agent)
     if (cached?.cwd !== cwd) {
       cached?.search.dispose()
-      cached = { cwd, search: new WorkspaceFileSearch(cwd, this.config) }
+      cached = { cwd, search: new WorkspaceFileSearch(cwd, this.config, agent.session.header.cuteafd_workspace === undefined ? undefined : this.remoteBackend) }
       this.searches.set(agent, cached)
     }
     return cached.search.list(query, signal)
