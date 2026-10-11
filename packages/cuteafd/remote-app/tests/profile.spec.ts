@@ -1,4 +1,6 @@
 import { readFileSync } from 'node:fs'
+import { execFile } from 'node:child_process'
+import { promisify } from 'node:util'
 import { resolve } from 'node:path'
 import { load } from 'js-yaml'
 import { applyEntryPatches, entryListSchema, type PatchOptions } from '@deepseek-ai/cordis-plugin-include'
@@ -44,3 +46,10 @@ it('removes local execution and creator/model-install rows but retains operator 
   const permission = all.find(row => row.id === 'permission')
   expect(permission?.config.presets['workspace-write']).toEqual({ sandbox: 'workspace-write', approval: 'ask' })
 })
+
+it('boots all production plugins, constructs every preset SSH world with declared dependencies, and disposes them', async () => {
+  const result = await promisify(execFile)(process.execPath,
+    [resolve(import.meta.dirname, 'production-lifecycle.mjs')],
+    { cwd: root, timeout: 120_000, maxBuffer: 1024 * 1024 })
+  expect(result.stdout).toContain('production lifecycle PASS')
+}, 130_000)

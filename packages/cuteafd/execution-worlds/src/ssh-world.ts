@@ -13,7 +13,9 @@ export type HostConfiguration = (alias: string) => Promise<Config>
 export function sshWorldFactory(ctx: Context, hostConfiguration: HostConfiguration): WorldFactory {
   return async (workspace, header) => {
     const config = await hostConfiguration(workspace.host)
-    let child = ctx
+    // Service calls carry the caller's dependency shadow; new providers need their own injection scope.
+    const shadow = Symbol.for('cordis.shadow')
+    let child: Context = Object.hasOwn(ctx, shadow) ? Object.getPrototypeOf(ctx) as Context : ctx
     for (const name of ['ssh', 'fs', 'subprocess', 'sandbox', 'shell', 'ptcRuntime']) child = child.isolate(name)
     const fibers = [
       child.plugin(SshConnection, { ...config, workspace: workspace.path, leaseMs: 15_000 }),
