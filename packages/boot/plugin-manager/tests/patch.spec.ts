@@ -7,6 +7,27 @@ import { applyEntryPatches } from '@deepseek-ai/cordis-plugin-include'
 import { loadOptionalPatches } from '@deepseek-ai/dsh-app-boot'
 import { writePluginEnabled } from '../src/patch.ts'
 
+it('structurally removes nested providers and prevents descendant patching', () => {
+  const input = [{ id: 'group', group: true, config: [{ id: 'local', name: 'unsafe' }] }, { id: 'operator', name: 'safe' }]
+  const warnings: string[] = []
+  const result = applyEntryPatches(input, [
+    { id: 'group', remove: true },
+    { id: 'local', disabled: false },
+  ], message => { warnings.push(message) })
+  expect(result).toEqual([{ id: 'operator', name: 'safe' }])
+  expect(input).toHaveLength(2)
+  expect(warnings).toEqual(['patch: entry %C not found'])
+})
+
+it('removes an inserted row only when its name assertion matches', () => {
+  const result = applyEntryPatches([], [
+    { insert: [{ id: 'local', name: 'provider' }] },
+    { id: 'local', name: 'different', remove: true },
+    { id: 'local', name: 'provider', remove: true },
+  ], () => {})
+  expect(result).toEqual([])
+})
+
 async function fixture(text?: string): Promise<string> {
   const dir = await mkdtemp(join(tmpdir(), 'manager-patch-'))
   onTestFinished(() => rm(dir, { recursive: true, force: true }))
