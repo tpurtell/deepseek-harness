@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import { ReasoningEffortId } from '@deepseek-ai/dsh-llm'
-import { Session, SessionId } from '@deepseek-ai/dsh-session'
-import { resolveChildAgentOptions, resolveChildDepth } from '../src/child-agent.ts'
+import { SESSION_FORMAT_VERSION, Session, SessionId } from '@deepseek-ai/dsh-session'
+import { Context } from '@deepseek-ai/cordis'
+import { childSessionMeta, resolveChildAgentOptions, resolveChildDepth } from '../src/child-agent.ts'
 
 function parentAgent(): Agent {
   const id = SessionId('parent')
@@ -19,6 +20,14 @@ function parentAgent(): Agent {
 }
 
 describe('child Agent options', () => {
+  it('inherits a detached remote workspace identity and parent ownership', () => {
+    const base = parentAgent()
+    const workspace = { kind: 'cuteafd-ssh' as const, host: 'rhea', path: '/workspace' }
+    const parent = { ...base, ctx: new Context(), session: Session.create(base.id, [], { version: SESSION_FORMAT_VERSION, id: base.id, createdAt: 1, isSeeded: false, cwd: workspace.path, cuteafd_workspace: workspace }) } as Agent
+    const meta = childSessionMeta(parent, 1, false)
+    expect(meta).toMatchObject({ cwd: '/workspace', cuteafd_workspace: workspace, parentSession: parent.id, origin: 'subagent' })
+    expect(meta.cuteafd_workspace).not.toBe(parent.session.header.cuteafd_workspace)
+  })
   it('inherits the parent effort while the exact route is unchanged', () => {
     expect(resolveChildAgentOptions(parentAgent(), undefined, 1)).toEqual({
       provider: 'parent-provider',

@@ -9,7 +9,7 @@ import type {
 import type {} from '@deepseek-ai/dsh-agent-default-model'
 import type {} from '@deepseek-ai/dsh-agent-preset-registry'
 import { ReasoningEffortId } from '@deepseek-ai/dsh-llm'
-import type { Session, SessionId } from '@deepseek-ai/dsh-session'
+import { SESSION_FORMAT_VERSION, type Session, type SessionHeader, type SessionId } from '@deepseek-ai/dsh-session'
 import type { SessionInspection } from '@deepseek-ai/dsh-session-persistence'
 import { SessionQueryError, type SessionObservation } from '@deepseek-ai/dsh-session-query'
 import { RemoteError } from '@deepseek-ai/dsh-typert-protocol'
@@ -241,10 +241,11 @@ export class ApiSessionAgentController {
     cwd: string,
     checkPersistedIdentity: boolean,
     presetId?: string,
+    remoteWorkspace?: SessionHeader['cuteafd_workspace'],
   ): Promise<Agent> {
     let creation = this.creations.get(sessionId)
     if (creation === undefined) {
-      creation = this.createOrAdopt(sessionId, cwd, checkPersistedIdentity, presetId)
+      creation = this.createOrAdopt(sessionId, cwd, checkPersistedIdentity, presetId, remoteWorkspace)
         .catch((error: unknown) => {
           const live = this.ctx.agents.get(sessionId)
           if (live !== undefined) {
@@ -271,6 +272,12 @@ export class ApiSessionAgentController {
     }
     if (agent.session.header.cwd !== cwd) {
       throw new ApiSessionCwdConflict(sessionId, cwd, agent.session.header.cwd)
+    }
+    if (remoteWorkspace !== undefined && (agent.session.header.cuteafd_workspace?.host !== remoteWorkspace.host || agent.session.header.cuteafd_workspace.path !== remoteWorkspace.path)) {
+      throw new Error('session remote workspace identity conflicts with requested host/path')
+    }
+    if (process.env.DSH_REMOTE_ONLY === '1' && agent.session.header.cuteafd_workspace === undefined) {
+      throw new Error('remote-only mode cannot adopt a local session')
     }
     return agent
   }
@@ -399,6 +406,9 @@ export class ApiSessionAgentController {
   private liveAgent(sessionId: SessionId): ApiSessionAgentResult | undefined {
     const agent = this.ctx.agents.get(sessionId)
     if (agent === undefined) return undefined
+    if (process.env.DSH_REMOTE_ONLY === '1' && agent.session.header.cuteafd_workspace === undefined) {
+      return { error: new RemoteError('gateway/internal', 'remote-only mode cannot open a local session', {}) }
+    }
     return hasApiSessionSubagentOwner(this.ctx, agent.session, agent)
       ? { error: apiSessionSubagentOwnershipError(sessionId) }
       : { agent }
@@ -428,6 +438,7 @@ export class ApiSessionAgentController {
     if (hasApiSessionSubagentOwner(this.ctx, { header: observation.header }, undefined)) {
       throw new ApiSessionSubagentOwnership(sessionId)
     }
+    if (process.env.DSH_REMOTE_ONLY === '1' && observation.header.cuteafd_workspace === undefined) throw new Error('remote-only mode cannot resume a local session')
     const composition = await this.composeAgent(this.presetForObservation(observation))
     const published = this.ctx.sessions.get(sessionId)
     const live = this.ctx.agents.get(sessionId)
@@ -446,6 +457,7 @@ export class ApiSessionAgentController {
     cwd: string,
     checkPersistedIdentity: boolean,
     presetId: string | undefined,
+    remoteWorkspace: SessionHeader['cuteafd_workspace'],
   ): Promise<Agent> {
     const attached = this.ctx.sessions.get(sessionId)
     const live = this.ctx.agents.get(sessionId)
@@ -463,6 +475,8 @@ export class ApiSessionAgentController {
         if (observation.header.cwd !== cwd) {
           throw new ApiSessionCwdConflict(sessionId, cwd, observation.header.cwd)
         }
+        if (process.env.DSH_REMOTE_ONLY === '1' && observation.header.cuteafd_workspace === undefined) throw new Error('remote-only mode cannot resume a local session')
+        if (remoteWorkspace !== undefined && (observation.header.cuteafd_workspace?.host !== remoteWorkspace.host || observation.header.cuteafd_workspace.path !== remoteWorkspace.path)) throw new Error('session remote workspace identity conflicts with requested host/path')
         const storedPreset = this.presetForObservation(observation)
         this.assertPresetUnchanged(sessionId, presetId, storedPreset)
         const composition = await this.composeAgent(storedPreset)
@@ -478,7 +492,18 @@ export class ApiSessionAgentController {
     }
 
     try {
-      await mkdir(cwd, { recursive: true })
+      if (remoteWorkspace === undefined) {
+        if (process.env.DSH_REMOTE_ONLY === '1') throw new Error('remote-only mode requires a selected SSH host')
+        await mkdir(cwd, { recursive: true })
+      } else {
+        const worlds = this.ctx.get('executionWorlds') as { withHeader<T>(header: SessionHeader, operation: () => T): Promise<Awaited<T>> } | undefined
+        if (worlds === undefined) throw new Error('remote execution worlds unavailable')
+        const header: SessionHeader = { version: SESSION_FORMAT_VERSION, id: sessionId, createdAt: Date.now(), isSeeded: false, cwd, cuteafd_workspace: remoteWorkspace }
+        await worlds.withHeader(header, async () => {
+          const target = await this.ctx.fs.resolve(cwd)
+          if ((await this.ctx.fs.stat(target))?.type !== 'directory') throw new Error('remote workspace must be an existing directory')
+        })
+      }
     } catch (error: unknown) {
       throw new Error(`failed to ensure project directory "${cwd}": ${String(error)}`, { cause: error })
     }
@@ -488,6 +513,7 @@ export class ApiSessionAgentController {
       agentOptions: this.agentOptions(),
       meta: {
         cwd,
+        ...(remoteWorkspace === undefined ? {} : { cuteafd_workspace: structuredClone(remoteWorkspace) }),
         ...(composition.agentPreset === undefined ? {} : { agentPreset: composition.agentPreset }),
       },
       setup: composition.setup,

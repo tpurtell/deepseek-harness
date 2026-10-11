@@ -117,6 +117,13 @@ export class SessionCommandController {
       }
     }
     const cwd = workspace?.path ?? request.cwd ?? this.defaultCwd
+    if (process.env.DSH_REMOTE_ONLY === '1' && (request.host === undefined || request.cwd === undefined || workspace !== undefined)) {
+      throw new RemoteError('gateway/bad-request', 'remote session creation requires host and absolute cwd', {})
+    }
+    if (request.host !== undefined && (!/^[a-zA-Z0-9][a-zA-Z0-9_.-]*$/.test(request.host) || !cwd.startsWith('/') || cwd.includes('\0') || workspace !== undefined)) {
+      throw new RemoteError('gateway/bad-request', 'remote session creation requires a valid SSH alias and absolute cwd', {})
+    }
+    const remoteWorkspace = request.host === undefined ? undefined : { kind: 'cuteafd-ssh' as const, host: request.host, path: cwd }
     let adopted: Agent
     try {
       adopted = await this.agents.ensureSession(
@@ -124,6 +131,7 @@ export class SessionCommandController {
         cwd,
         request.sessionId !== undefined,
         request.agentPreset,
+        remoteWorkspace,
       )
     } catch (error) {
       this.rejectCreation(sessionId, error)
@@ -273,6 +281,7 @@ export class SessionCommandController {
         inheritedEventCount: SessionLogOffset(boundary + 1),
         meta: {
           ...(source.header.cwd === undefined ? {} : { cwd: source.header.cwd }),
+          ...(source.header.cuteafd_workspace === undefined ? {} : { cuteafd_workspace: structuredClone(source.header.cuteafd_workspace) }),
           parentSession: source.header.id,
           isSeeded: true,
           ...(composition.agentPreset === undefined

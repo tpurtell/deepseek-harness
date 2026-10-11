@@ -41,6 +41,24 @@ async function baseContext(): Promise<Context> {
 }
 
 describe('Session creation failures', () => {
+  it('passes selected SSH host identity into remote session creation', async () => {
+    const ctx = await baseContext()
+    const ensureSession = vi.fn((id: SessionId) => Promise.resolve({ id } as Agent))
+    const controller = new SessionCommandController(ctx, controllerAgents({ ensureSession }), '/default')
+    vi.stubEnv('DSH_REMOTE_ONLY', '1')
+    try {
+      const created = await controller.create({ host: 'rhea', cwd: '/remote/work' })
+      expect(ensureSession).toHaveBeenCalledWith(created.sessionId, '/remote/work', false, undefined,
+        { kind: 'cuteafd-ssh', host: 'rhea', path: '/remote/work' })
+      await expectFailure(controller.create({ cwd: '/remote/work' }), 'gateway/bad-request')
+      await expectFailure(controller.create({ host: '-oProxyCommand=x', cwd: '/remote/work' }), 'gateway/bad-request')
+      await expectFailure(controller.create({ host: 'rhea', cwd: 'relative' }), 'gateway/bad-request')
+      expect(ensureSession).toHaveBeenCalledTimes(1)
+    } finally {
+      vi.unstubAllEnvs()
+      await ctx.fiber.dispose()
+    }
+  })
   it('mints an identity with the default cwd when no explicit target is supplied', async () => {
     const ctx = await baseContext()
     ctx.provide('workspaceRegistry', { get: () => undefined, list: () => [] } as never)
@@ -62,6 +80,7 @@ describe('Session creation failures', () => {
       created.sessionId,
       '/default-workspace',
       false,
+      undefined,
       undefined,
     )
     await ctx.fiber.dispose()
@@ -180,6 +199,24 @@ function resolvedHandle(ctx: Context, sessionId: SessionId): AgentHandle {
 }
 
 describe('Session fork failures', () => {
+  it('copies the remote workspace into an independent fork session', async () => {
+    const ctx = await baseContext()
+    ctx.provide('workspaceRegistry', { list: () => [] } as never)
+    const workspace = { kind: 'cuteafd-ssh' as const, host: 'moa', path: '/remote/work' }
+    const source = ctx.sessions.create(SessionId('remote-fork-source'), { meta: { cwd: workspace.path, cuteafd_workspace: workspace } })
+    source.append('turn/start', { turn: 1 })
+    source.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
+    const create = vi.spyOn(ctx.agents, 'create').mockImplementation(
+      options => Promise.resolve(resolvedHandle(ctx, options.sessionId)),
+    )
+    const controller = new SessionCommandController(ctx, controllerAgents(), '/default')
+    await controller.fork({ sessionId: source.id })
+    const meta = create.mock.calls[0]?.[0].meta
+    expect(meta).toMatchObject({ cwd: workspace.path, cuteafd_workspace: workspace })
+    expect(meta?.cuteafd_workspace).not.toBe(source.header.cuteafd_workspace)
+    expect(meta?.origin).not.toBe('subagent')
+    await ctx.fiber.dispose()
+  })
   it('maps missing cold sources with and without persistence', async () => {
     const withoutPersistence = await baseContext()
     withoutPersistence.provide('workspaceRegistry', { list: () => [] } as never)

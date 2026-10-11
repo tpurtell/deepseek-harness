@@ -76,6 +76,37 @@ function unpublishedAgent(ctx: Context, meta: SessionHeader): Agent {
 }
 
 describe('ApiSession identity failures', () => {
+  it('rejects a live local agent in remote-only mode', async () => {
+    const { ctx, agents } = await harness()
+    const live = agent(ctx, header('local-live'))
+    vi.spyOn(ctx.agents, 'get').mockReturnValue(live)
+    vi.stubEnv('DSH_REMOTE_ONLY', '1')
+    try {
+      const result = await agents.resolveAgent(live.id)
+      expect(result).toHaveProperty('error.message', 'remote-only mode cannot open a local session')
+      expect(result).not.toHaveProperty('agent')
+    } finally { vi.unstubAllEnvs() }
+  })
+  it('checks host identity when adopting a live remote session', async () => {
+    const { ctx, agents } = await harness()
+    const workspace = { kind: 'cuteafd-ssh' as const, host: 'rhea', path: '/workspace' }
+    const live = agent(ctx, { ...header('remote-adopt'), cuteafd_workspace: workspace })
+    vi.spyOn(ctx.agents, 'get').mockReturnValue(live)
+    await expect(agents.ensureSession(live.id, '/workspace', false, undefined, workspace)).resolves.toBe(live)
+    await expect(agents.ensureSession(live.id, '/workspace', false, undefined, { ...workspace, host: 'moa' })).rejects.toThrow('remote workspace identity conflicts')
+  })
+
+  it('rejects cold local restore in remote-only mode before resuming it', async () => {
+    const { ctx, agents } = await harness()
+    const resume = vi.spyOn(ctx.agents, 'resume')
+    vi.stubEnv('DSH_REMOTE_ONLY', '1')
+    try {
+      const result = await agents.resolveObservedAgent({ header: header('local-cold') } as SessionObservation)
+      expect(result).toHaveProperty('error.message', expect.stringContaining('cannot resume a local session'))
+      expect(resume).not.toHaveBeenCalled()
+    } finally { vi.unstubAllEnvs() }
+  })
+
   it('describes cwd conflicts with and without a recorded cwd', () => {
     expect(new ApiSessionCwdConflict(SessionId('missing-cwd'), '/wanted', undefined).message)
       .toContain('records no cwd')

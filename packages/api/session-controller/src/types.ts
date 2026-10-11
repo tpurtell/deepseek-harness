@@ -286,6 +286,8 @@ export interface SessionSearchValue {
 
 /** Session creation or explicit-id adoption request. */
 export interface SessionCreateRequest {
+  /** Required by the cuteafd remote-only profile; cwd is the absolute remote path. */
+  readonly host?: string
   readonly workspaceId?: WorkspaceId
   readonly cwd?: string
   readonly sessionId?: SessionId

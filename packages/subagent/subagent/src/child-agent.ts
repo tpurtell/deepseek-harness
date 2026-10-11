@@ -143,6 +143,7 @@ export function childSessionMeta(
   const agentPreset = parent.ctx.get('agentPresets')?.composedPreset(parent.ctx)
   return {
     ...parentHeader.cwd !== undefined ? { cwd: parentHeader.cwd } : {},
+    ...parentHeader.cuteafd_workspace === undefined ? {} : { cuteafd_workspace: structuredClone(parentHeader.cuteafd_workspace) },
     ...agentPreset === undefined ? {} : { agentPreset },
     parentSession: parentHeader.id,
     isSeeded,
