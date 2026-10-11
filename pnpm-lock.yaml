@@ -242,6 +242,12 @@ importers:
 
   apps/cli:
     dependencies:
+      '@cuteafd/dsh-admin':
+        specifier: workspace:*
+        version: link:../../packages/cuteafd/admin
+      '@cuteafd/dsh-remote-app':
+        specifier: workspace:*
+        version: link:../../packages/cuteafd/remote-app
       '@deepseek-ai/cordis':
         specifier: workspace:~
         version: link:../../vendor/cordis
@@ -7494,6 +7500,15 @@ importers:
         specifier: workspace:*
         version: link:../../core/tools
 
+  packages/cuteafd/facet:
+    dependencies:
+      '@deepseek-ai/cordis':
+        specifier: workspace:~
+        version: link:../../../vendor/cordis
+      '@deepseek-ai/dsh-client-ui-theme':
+        specifier: workspace:*
+        version: link:../../client/ui-theme
+
   packages/cuteafd/hosts:
     dependencies:
       '@cuteafd/dsh-execution-worlds':
@@ -7529,6 +7544,9 @@ importers:
       '@cuteafd/dsh-execution-worlds':
         specifier: workspace:*
         version: link:../execution-worlds
+      '@cuteafd/dsh-facet':
+        specifier: workspace:*
+        version: link:../facet
       '@cuteafd/dsh-hosts':
         specifier: workspace:*
         version: link:../hosts

@@ -20,6 +20,8 @@
   ],
   "license": "MIT",
   "dependencies": {
+    "@cuteafd/dsh-remote-app": "workspace:*",
+    "@cuteafd/dsh-admin": "workspace:*",
     "@deepseek-ai/cordis": "workspace:~",
     "@deepseek-ai/dsh-hmr": "workspace:*",
     "@deepseek-ai/cordis-plugin-include": "workspace:~",
