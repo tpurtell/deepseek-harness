@@ -105,6 +105,8 @@ export interface ConnectionConfig {
   trustedHosts?: string[]
   /** Absolute browser and API cookie lifetime in days. Default: 30. */
   cookieMaxAgeDays?: number
+  /** Private process-token handoff file for a same-host reverse proxy. Never logged. */
+  launchTokenFile?: string
   /** Maximum buffered JSON body for every `/api` request. Default: 300 MiB. */
   maxRequestBodyBytes?: number
 }
@@ -113,6 +115,7 @@ export const Config: z<ConnectionConfig> = z.object({
   recovery: ConnectionRecoveryConfigSchema.default({}),
   trustedHosts: z.array(String).default([]),
   cookieMaxAgeDays: z.natural().min(1).default(30),
+  launchTokenFile: z.string(),
   maxRequestBodyBytes: z.natural().min(1).default(DEFAULT_MAX_REQUEST_BODY_BYTES),
 })
 
@@ -133,11 +136,12 @@ export async function apply(ctx: Context, config?: ConnectionConfig): Promise<vo
   // silently authorizing its hostname prefix at request time.
   for (const entry of trustedHosts) assertTrustedAuthority(entry)
   assertImageBodyCapacity(ctx, maxRequestBodyBytes)
-  const connection = new HostConnectionService(
-    ctx,
-    trustedHosts,
-    await BrowserAuth.create(ctx.root, ctx.credentials, cookieMaxAgeDays),
-  )
+  const browserAuth = await BrowserAuth.create(ctx.root, ctx.credentials, cookieMaxAgeDays)
+  if (config?.launchTokenFile !== undefined) {
+    const cleanup = await browserAuth.publishLaunchToken(config.launchTokenFile)
+    ctx.effect(() => cleanup, 'client-connection: private launch token handoff')
+  }
+  const connection = new HostConnectionService(ctx, trustedHosts, browserAuth)
   ctx.inject(['webServer'], (webCtx) => {
     assertImageBodyCapacity(webCtx, maxRequestBodyBytes)
     webCtx.on('webserver/index-inject', (table) => {

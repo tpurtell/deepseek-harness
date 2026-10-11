@@ -1,6 +1,9 @@
 /** Browser launch-token and persistent-cookie behavior. */
 
 import { createHmac } from 'node:crypto'
+import { mkdtemp, readFile, rm, stat } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { CredentialProvider } from '@deepseek-ai/dsh-credentials'
 import type { PeerId } from '@deepseek-ai/dsh-typert-protocol'
@@ -160,6 +163,27 @@ describe('API credentials', () => {
 })
 
 describe('BrowserAuth', () => {
+  it('publishes a 0600 token handoff, rotates it for a new process, and cleans only its own value', async () => {
+    const home = await mkdtemp(join(tmpdir(), 'dsh-launch-token-'))
+    const path = join(home, 'dsh/launch-token')
+    try {
+      const first = await createAuth(new RecordCredentials())
+      const cleanupFirst = await first.publishLaunchToken(path)
+      const token = new URL(first.authenticatedUrl('http://localhost')).searchParams.get('token')!
+      expect(await readFile(path, 'utf8')).toBe(`${token}\n`)
+      expect((await stat(path)).mode & 0o777).toBe(0o600)
+      const second = await createAuth(new RecordCredentials())
+      const cleanupSecond = await second.publishLaunchToken(path)
+      const rotated = await readFile(path, 'utf8')
+      expect(rotated).not.toBe(`${token}\n`)
+      await cleanupFirst()
+      expect(await readFile(path, 'utf8')).toBe(rotated)
+      await cleanupSecond()
+      await expect(readFile(path)).rejects.toMatchObject({ code: 'ENOENT' })
+      await cleanupSecond()
+      await expect(first.publishLaunchToken('relative')).rejects.toThrow('absolute path')
+    } finally { await rm(home, { recursive: true, force: true }) }
+  })
   it('mints one process token and a persistent authority-bound cookie', async () => {
     const store = new RecordCredentials()
     const processOwner = {}
