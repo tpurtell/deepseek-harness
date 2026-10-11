@@ -23,6 +23,7 @@ const sessionId = z.string().transform(value => brandString<SessionId>(value))
  */
 export const workspaceRecord = z.object({
   path: z.string(),
+  host: z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9_.-]*$/u).optional(),
   title: z.string(),
   sessionIds: z.array(sessionId),
   createdAt: z.string(),

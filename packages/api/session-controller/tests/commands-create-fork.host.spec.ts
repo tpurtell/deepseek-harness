@@ -59,6 +59,24 @@ describe('Session creation failures', () => {
       await ctx.fiber.dispose()
     }
   })
+  it('creates a remote session from a host-aware workspace without accepting a host override', async () => {
+    const ctx = await baseContext()
+    const attachSession = vi.fn(async () => {})
+    const workspace = { id: 'remote-workspace' as WorkspaceId, host: 'rhea', path: '/remote/work', attachSession }
+    ctx.provide('workspaceRegistry', { get: () => workspace } as never)
+    const ensureSession = vi.fn((id: SessionId) => Promise.resolve({ id } as Agent))
+    const controller = new SessionCommandController(ctx, controllerAgents({ ensureSession }), '/default')
+    vi.stubEnv('DSH_REMOTE_ONLY', '1')
+    try {
+      const created = await controller.create({ workspaceId: workspace.id })
+      expect(ensureSession).toHaveBeenCalledWith(created.sessionId, '/remote/work', false, undefined,
+        { kind: 'cuteafd-ssh', host: 'rhea', path: '/remote/work' })
+      expect(attachSession).toHaveBeenCalledWith(created.sessionId)
+      await expectFailure(controller.create({ workspaceId: workspace.id, host: 'moa' }), 'gateway/bad-request')
+      expect(ensureSession).toHaveBeenCalledTimes(1)
+    } finally { vi.unstubAllEnvs(); await ctx.fiber.dispose() }
+  })
+
   it('mints an identity with the default cwd when no explicit target is supplied', async () => {
     const ctx = await baseContext()
     ctx.provide('workspaceRegistry', { get: () => undefined, list: () => [] } as never)

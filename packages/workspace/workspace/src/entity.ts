@@ -13,7 +13,7 @@ import type { SessionHeader, SessionId } from '@deepseek-ai/dsh-session'
 import type { KvTable } from '@deepseek-ai/dsh-storage-domain'
 import type { WorkspaceRecord } from './spec.ts'
 import type { Workspace, WorkspaceId } from './types.ts'
-import { realpathNormalize } from './paths.ts'
+import { realpathNormalize, remoteWorkspacePath, workspaceIdentity } from './paths.ts'
 
 /** An insertSessionBefore request named a session or anchor not on the account (storage failures stay plain errors). */
 export class WorkspaceMoveInvalidError extends Error {
@@ -37,6 +37,8 @@ export interface WorkspaceEntityHost {
    * @returns the table; throws while the registry has not started yet.
    */
   table(): KvTable<WorkspaceId, WorkspaceRecord>
+
+  remoteStatus?(host: string, path: string): Promise<'ok' | 'missing-dir'>
 
   /**
    * Read a session's canonical directory from the registry's header index.
@@ -75,7 +77,7 @@ export class WorkspaceEntity implements Workspace {
    * @param record - The validated record snapshot loaded or just written.
    */
   constructor(
-    private readonly host: WorkspaceEntityHost,
+    private readonly registry: WorkspaceEntityHost,
     readonly id: WorkspaceId,
     record: WorkspaceRecord,
   ) {
@@ -85,6 +87,8 @@ export class WorkspaceEntity implements Workspace {
   get path(): string {
     return this.record.path
   }
+
+  get host(): string | undefined { return this.record.host }
 
   get title(): string {
     return this.record.title
@@ -99,7 +103,7 @@ export class WorkspaceEntity implements Workspace {
   }
 
   get sessionIds(): readonly SessionId[] {
-    return this.record.sessionIds.filter(id => this.host.sessionPath(id) === this.record.path)
+    return this.record.sessionIds.filter(id => this.registry.sessionPath(id) === workspaceIdentity(this.record.path, this.record.host))
   }
 
   async setTitle(title: string): Promise<void> {
@@ -112,7 +116,7 @@ export class WorkspaceEntity implements Workspace {
     // (stored header cwd, workspace path) are immutable. Membership itself is
     // decided on the write chain inside `mutate`, never on this snapshot.
     if (!this.record.sessionIds.includes(sessionId)) {
-      const header = await this.host.readSessionHeader(sessionId)
+      const header = await this.registry.readSessionHeader(sessionId)
       if (header.cwd === undefined) {
         throw new Error(
           `cannot attach session '${sessionId}' to workspace '${this.record.path}': `
@@ -121,7 +125,14 @@ export class WorkspaceEntity implements Workspace {
       }
       let cwd: string
       try {
-        cwd = await realpathNormalize(header.cwd)
+        const remote = header.cuteafd_workspace
+        if (remote !== undefined) {
+          if (remote.path !== header.cwd) throw new Error('session remote path differs from cwd')
+          cwd = workspaceIdentity(remoteWorkspacePath(header.cwd, remote.host), remote.host)
+        } else {
+          if (process.env.DSH_REMOTE_ONLY === '1') throw new Error('local session is unavailable in remote-only mode')
+          cwd = await realpathNormalize(header.cwd)
+        }
       } catch (error) {
         throw new Error(
           `cannot attach session '${sessionId}' to workspace '${this.record.path}': `
@@ -129,19 +140,19 @@ export class WorkspaceEntity implements Workspace {
           { cause: error },
         )
       }
-      if (!(await stat(cwd)).isDirectory()) {
+      if (header.cuteafd_workspace === undefined && !(await stat(cwd)).isDirectory()) {
         throw new Error(
           `cannot attach session '${sessionId}' to workspace '${this.record.path}': `
           + `its cwd '${header.cwd}' is not a directory`,
         )
       }
-      if (cwd !== this.record.path) {
+      if (cwd !== workspaceIdentity(this.record.path, this.record.host)) {
         throw new Error(
           `cannot attach session '${sessionId}' to workspace '${this.record.path}': `
           + `its cwd resolves to '${cwd}'`,
         )
       }
-      this.host.rememberSessionPath(sessionId, cwd)
+      this.registry.rememberSessionPath(sessionId, cwd)
     }
     await this.mutate(record => record.sessionIds.includes(sessionId)
       ? record
@@ -178,6 +189,11 @@ export class WorkspaceEntity implements Workspace {
   }
 
   async status(): Promise<'ok' | 'missing-dir'> {
+    if (this.record.host !== undefined) {
+      if (this.registry.remoteStatus === undefined) throw new Error('remote workspace backend is unavailable')
+      return await this.registry.remoteStatus(this.record.host, this.record.path)
+    }
+    if (process.env.DSH_REMOTE_ONLY === '1') throw new Error('local workspace is unavailable in remote-only mode')
     try {
       return (await stat(this.record.path)).isDirectory() ? 'ok' : 'missing-dir'
     } catch {
@@ -202,10 +218,10 @@ export class WorkspaceEntity implements Workspace {
   private async mutate(fn: (record: WorkspaceRecord) => WorkspaceRecord): Promise<void> {
     let next: WorkspaceRecord
     try {
-      next = await this.host.table().update(this.id, (current) => {
+      next = await this.registry.table().update(this.id, (current) => {
         const changed = fn(current)
         const sessionIds = changed.sessionIds.filter(
-          id => this.host.sessionPath(id) === changed.path,
+          id => this.registry.sessionPath(id) === workspaceIdentity(changed.path, changed.host),
         )
         if (changed === current && sessionIds.length === current.sessionIds.length) {
           throw unchangedSentinel

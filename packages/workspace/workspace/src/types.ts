@@ -71,6 +71,9 @@ export interface Workspace {
    */
   readonly path: string
 
+  /** SSH alias for remote workspaces; absent for legacy local workspaces. */
+  readonly host?: string | undefined
+
   /** Display title. Defaults to the final path segment, or a filesystem root's own spelling; duplicates are allowed. */
   readonly title: string
 

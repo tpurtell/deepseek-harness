@@ -1399,3 +1399,51 @@ declare module '@deepseek-ai/dsh-workspace/types' {
     'probe-items': true
   }
 }
+
+
+describe('remote host workspace identity', () => {
+  afterEach(() => vi.unstubAllEnvs())
+
+  const remote = (id: string, host: string): SessionHeader => ({
+    ...header(id, '/remote-only/project', 1),
+    cuteafd_workspace: { kind: 'cuteafd-ssh', host, path: '/remote-only/project' },
+  })
+
+  it('bootstraps identical paths on distinct hosts without probing the container filesystem', async () => {
+    vi.stubEnv('DSH_REMOTE_ONLY', '1')
+    const h = await harness({ sessions: [remote('rhea-session', 'rhea'), remote('moa-session', 'moa')] })
+    try {
+      expect(h.registry.list()).toHaveLength(2)
+      expect(h.registry.list().map(workspace => [workspace.host, workspace.path, workspace.sessionIds])).toEqual([
+        ['moa', '/remote-only/project', [SessionId('moa-session')]],
+        ['rhea', '/remote-only/project', [SessionId('rhea-session')]],
+      ])
+      const restarted = await harness({ pool: h.pool, sessions: [remote('rhea-session', 'rhea'), remote('moa-session', 'moa')] })
+      try { expect(restarted.registry.list().map(workspace => workspace.host)).toEqual(['moa', 'rhea']) }
+      finally { await restarted.ctx.fiber.dispose() }
+    } finally { await h.ctx.fiber.dispose() }
+  })
+
+  it('creates through the remote backend and rejects cross-host attachment and local fallback', async () => {
+    vi.stubEnv('DSH_REMOTE_ONLY', '1')
+    const h = await harness({ liveSessions: [remote('rhea-session', 'rhea'), remote('moa-session', 'moa')] })
+    const canonical = vi.fn(async (_host: string, path: string) => path)
+    const status = vi.fn(async () => 'ok' as const)
+    h.registry.configureRemote({ canonical, status })
+    try {
+      const rhea = await h.registry.create('/remote-only/project', undefined, 'rhea')
+      const moa = await h.registry.create('/remote-only/project', undefined, 'moa')
+      expect(rhea.id).not.toBe(moa.id)
+      await rhea.attachSession(SessionId('rhea-session'))
+      await expect(rhea.attachSession(SessionId('moa-session'))).rejects.toThrow('resolves')
+      expect(rhea.sessionIds).toEqual([SessionId('rhea-session')])
+      expect(await rhea.status()).toBe('ok')
+      expect(status).toHaveBeenCalledWith('rhea', '/remote-only/project')
+      await expect(h.registry.create('/container-directory')).rejects.toThrow('requires a host')
+      const resolve = vi.fn(async () => '/container-directory')
+      expect(await h.registry.initializeDefault(resolve)).toBeUndefined()
+      expect(resolve).not.toHaveBeenCalled()
+      expect(await h.registry.resolveByPath('/remote-only/project', 'moa')).toBe(moa)
+    } finally { await h.ctx.fiber.dispose() }
+  })
+})
