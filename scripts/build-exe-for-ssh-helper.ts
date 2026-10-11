@@ -1,5 +1,5 @@
 /** Build a relocatable, native-host SSH helper archive with its private Node workers. */
-import { spawn, execFileSync } from 'node:child_process'
+import { spawn } from 'node:child_process'
 import { existsSync, globSync } from 'node:fs'
 import { chmod, copyFile, cp, lstat, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { basename, dirname, join, resolve } from 'node:path'
@@ -10,7 +10,7 @@ import { verifyRuntimeClosure } from './verify-runtime-closure.ts'
 import { pnpmInvocation, restoreLegacyHoists } from './executable-packaging.ts'
 import { materializeStagedLinks, deduplicateStagedWorkspacePackages } from './build-exe-for-python-sdk-staging.ts'
 import { resolveLinuxNodePtyAddon } from './executable-native-pty.ts'
-import { artifactManifestSchema, fileDigest, payloadFiles, SSH_HELPER_TARGETS, verifyPayload, type SshHelperTarget } from './ssh-helper/artifact.ts'
+import { artifactManifestSchema, fileDigest, helperSourceProvenance, payloadFiles, SSH_HELPER_TARGETS, verifyPayload, type SshHelperTarget } from './ssh-helper/artifact.ts'
 import { probeHelper } from './ssh-helper/probe.ts'
 import { verifyNativePayload } from './ssh-helper/native.ts'
 
@@ -122,6 +122,7 @@ export async function buildSshHelper(argv: string[]): Promise<void> {
     console.log(`SSH helper ${target}: ${values['skip-build'] ? 'reuse built modules' : 'compile runtime'} -> deploy ${closureName} -> pkg --sea -> handshake -> ${output}`)
     return
   }
+  const provenance = helperSourceProvenance(root)
   if (!values['skip-build']) await compileRuntime(definition.dependencies ?? {})
   await mkdir(join(root, '.dsh-build'), { recursive: true })
   const temporary = await mkdtemp(join(root, '.dsh-build/ssh-helper-'))
@@ -154,8 +155,7 @@ export async function buildSshHelper(argv: string[]): Promise<void> {
     if (hello.kind !== 'executable' || hello.executable !== executable) throw new Error('Packaged SSH helper did not report its physical executable')
     const metadata = artifactManifestSchema.parse({
       format: 1, version: definition.version, target,
-      commit: execFileSync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8' }).trim(),
-      dirty: execFileSync('git', ['status', '--porcelain'], { cwd: root, encoding: 'utf8' }).trim() !== '',
+      ...provenance,
       protocol: hello.protocol, nodeVersion: hello.nodeVersion,
       files: await Promise.all((await payloadFiles(product)).map(async path => ({
         path, sha256: await fileDigest(join(product, path)), mode: (await lstat(join(product, path))).mode & 0o777,

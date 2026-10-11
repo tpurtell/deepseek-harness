@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { create as createTar } from 'tar'
 import { expect, it, onTestFinished } from 'vitest'
-import { artifactManifestSchema, fileDigest, payloadFiles, SSH_HELPER_TARGETS, verifyPayload } from './artifact.ts'
+import { artifactManifestSchema, fileDigest, helperSourceProvenance, payloadFiles, SSH_HELPER_TARGETS, verifyPayload } from './artifact.ts'
 import { macosDeploymentVersions } from './native.ts'
 import { extractHelper } from '../verify-ssh-helper-artifact.ts'
 import { prepareSshRelease } from './release.ts'
@@ -26,6 +26,23 @@ async function fixture() {
   await save()
   return { root, payload, metadata, save }
 }
+
+it('accepts explicit source provenance without consulting Git', () => {
+  for (const dirty of ['true', 'false']) {
+    expect(helperSourceProvenance('/nonexistent', { DSH_SOURCE_COMMIT: 'a'.repeat(40), DSH_SOURCE_DIRTY: dirty }))
+      .toEqual({ commit: 'a'.repeat(40), dirty: dirty === 'true' })
+  }
+})
+
+it.each([
+  { DSH_SOURCE_COMMIT: 'a'.repeat(7), DSH_SOURCE_DIRTY: 'false' },
+  { DSH_SOURCE_COMMIT: 'A'.repeat(40), DSH_SOURCE_DIRTY: 'false' },
+  { DSH_SOURCE_COMMIT: 'a'.repeat(40) },
+  { DSH_SOURCE_DIRTY: 'false' },
+  { DSH_SOURCE_COMMIT: 'a'.repeat(40), DSH_SOURCE_DIRTY: '0' },
+])('rejects incomplete or malformed source provenance %j', environment => {
+  expect(() => helperSourceProvenance('/nonexistent', environment)).toThrow(/DSH_SOURCE_/)
+})
 
 it('validates the exact unpacked inventory and rejects altered bytes', async () => {
   const test = await fixture()
