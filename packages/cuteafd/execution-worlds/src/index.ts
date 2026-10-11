@@ -43,7 +43,7 @@ export function requireRemoteWorkspace(header: Pick<SessionHeader, 'cwd' | 'cute
   if (workspace === undefined) throw new RemoteWorkspaceRequiredError()
   if (workspace.kind !== 'cuteafd-ssh' || workspace.path !== header.cwd
     || !/^[a-zA-Z0-9][a-zA-Z0-9_.-]*$/.test(workspace.host)
-    || !workspace.path.startsWith('/') || workspace.path.includes('\0')) throw new Error('invalid remote workspace identity')
+    || !workspace.path.startsWith('/') || /[\r\n\0]/u.test(workspace.path)) throw new Error('invalid remote workspace identity')
   return workspace
 }
 
@@ -51,6 +51,8 @@ export type WorldFactory = (workspace: NonNullable<SessionHeader['cuteafd_worksp
 
 interface WorldEntry {
   readonly world: Promise<ExecutionWorld>
+  readonly host: string
+  readonly path: string
   active: number
   timer?: NodeJS.Timeout
 }
@@ -123,13 +125,15 @@ export class ExecutionWorlds extends Service {
       const parent = this.ctx.sessions.get(owner.parentSession)?.header
       if (parent === undefined) throw new Error('remote subagent parent is not open')
       const parentWorkspace = requireRemoteWorkspace(parent)
-      if (parentWorkspace.host !== workspace.host) throw new Error('remote subagent cannot change its execution host')
+      if (parentWorkspace.host !== workspace.host || parentWorkspace.path !== workspace.path) throw new Error('remote subagent cannot change its execution host or workspace')
       owner = parent
     }
+    const ownerWorkspace = requireRemoteWorkspace(owner)
     let entry = this.worlds.get(owner.id)
+    if (entry !== undefined && (entry.host !== ownerWorkspace.host || entry.path !== ownerWorkspace.path)) throw new Error('open session cannot change its execution identity')
     if (entry === undefined) {
       if (this.factory === undefined) throw new NoExecutionWorldError()
-      entry = { world: this.factory(workspace, owner), active: 0 }
+      entry = { world: this.factory(ownerWorkspace, owner), host: ownerWorkspace.host, path: ownerWorkspace.path, active: 0 }
       this.worlds.set(owner.id, entry)
       const pending = entry
       void pending.world.catch(() => { if (this.worlds.get(owner.id) === pending) this.worlds.delete(owner.id) })

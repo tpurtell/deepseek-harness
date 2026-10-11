@@ -70,6 +70,21 @@ describe('remote execution boundary', () => {
     } finally { await ctx.fiber.dispose(); vi.useRealTimers() }
   })
 
+  it('rejects changed identities on a live session and mismatched subagent workspaces', async () => {
+    const ctx = new Context()
+    await ctx.plugin(SessionStore)
+    await ctx.plugin(ExecutionWorlds)
+    const factory = vi.fn(async () => recordingWorld('rhea').world)
+    ctx.executionWorlds.configure(factory)
+    const session = ctx.sessions.create(SessionId('fixed'), { meta: { cwd: '/work', cuteafd_workspace: { kind: 'cuteafd-ssh', host: 'rhea', path: '/work' } } })
+    try {
+      await ctx.executionWorlds.withHeader(session.header, () => {})
+      await expect(ctx.executionWorlds.withHeader({ ...session.header, cuteafd_workspace: { kind: 'cuteafd-ssh', host: 'moa', path: '/work' } }, () => {})).rejects.toThrow('execution identity')
+      await expect(ctx.executionWorlds.withHeader({ ...session.header, id: SessionId('child-wrong'), origin: 'subagent', parentSession: session.id, cwd: '/other', cuteafd_workspace: { kind: 'cuteafd-ssh', host: 'rhea', path: '/other' } }, () => {})).rejects.toThrow('host or workspace')
+      expect(factory).toHaveBeenCalledTimes(1)
+    } finally { await ctx.fiber.dispose() }
+  })
+
   it('rejects local headers instead of inventing a remote host', () => {
     expect(() => requireRemoteWorkspace({ cwd: '/work' })).toThrow('remote-only mode requires cuteafd_workspace')
   })
