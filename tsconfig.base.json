@@ -28,6 +28,8 @@
     // not declaration path aliases, keep each package/vendor source compiled
     // under its own tsconfig boundary.
     "paths": {
+      "@cuteafd/dsh-facet": ["./packages/cuteafd/facet/src/index.ts"],
+      "@cuteafd/dsh-facet/client": ["./packages/cuteafd/facet/src/client/index.ts"],
       "@cuteafd/dsh-ui-hosts": ["./packages/cuteafd/ui-hosts/src/index.ts"],
       "@cuteafd/dsh-ui-hosts/client": ["./packages/cuteafd/ui-hosts/src/client/index.tsx"],
       "@cuteafd/dsh-hosts": ["./packages/cuteafd/hosts/src/index.ts"],

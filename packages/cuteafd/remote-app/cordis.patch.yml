@@ -49,3 +49,5 @@
         helperRoot: /opt/dsh/helpers
     - id: cuteafd-ui-hosts
       name: '@cuteafd/dsh-ui-hosts'
+    - id: cuteafd-facet
+      name: '@cuteafd/dsh-facet'
