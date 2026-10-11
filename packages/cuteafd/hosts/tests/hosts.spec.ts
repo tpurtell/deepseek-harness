@@ -6,6 +6,9 @@ import { Context } from '@deepseek-ai/cordis'
 import { expect, it, onTestFinished, vi } from 'vitest'
 import { Hosts, hostKeyFingerprint, type Runner } from '../src/index.ts'
 
+const picker = vi.hoisted(() => ({ create: vi.fn(), dispose: vi.fn() }))
+vi.mock('@cuteafd/dsh-execution-worlds', () => ({ sshWorldFactory: () => picker.create }))
+
 const spec = { alias: 'rhea', hostname: '10.55.0.5', user: 'tj', port: 22 }
 const blob = Buffer.concat([Buffer.from([0, 0, 0, 11]), Buffer.from('ssh-ed25519'), Buffer.from([0, 0, 0, 32]), Buffer.alloc(32, 7)])
 const publicKey = `ssh-ed25519 ${blob.toString('base64')}`
@@ -123,6 +126,46 @@ it('canonicalizes and checks directories only over a confirmed host connection',
   await expect(hosts.canonical('rhea', 'relative')).rejects.toThrow('absolute')
   await expect(hosts.status('unknown', '/remote')).rejects.toThrow('not registered')
   expect(vi.mocked(runner).mock.calls.length).toBe(calls)
+})
+
+it('lists only remote directories and always releases the temporary picker world', async () => {
+  const { hosts, runner } = await fixture()
+  const scanned = await hosts.scan(spec)
+  await hosts.confirm(scanned.confirmation, scanned.fingerprint)
+  vi.mocked(runner).mockImplementation(async (_command, args) => args.at(-1)?.includes('pwd -P') ? '/remote/project\n' : '/home/tj')
+  picker.dispose.mockReset()
+  const listDir = vi.fn(async () => [
+    { name: 'zeta', type: 'directory', target: '/remote/project/zeta' },
+    { name: 'file', type: 'file', target: '/remote/project/file' },
+    { name: '.hidden', type: 'directory', target: '/remote/project/.hidden' },
+  ])
+  picker.create.mockResolvedValue({ fs: { resolve: async (path: string) => path, listDir, processPath: (path: string) => path }, dispose: picker.dispose })
+  const result = await hosts.listDirectory('rhea', '/remote/link')
+  expect(result.path).toBe('/remote/project')
+  expect(result.home).toBe('/home/tj')
+  expect(result.entries.map(entry => entry.name)).toEqual(['.hidden', 'zeta'])
+  expect(result.crumbs.map(entry => entry.path)).toEqual(['/', '/remote', '/remote/project'])
+  expect(picker.create).toHaveBeenLastCalledWith({ kind: 'cuteafd-ssh', host: 'rhea', path: '/remote/project' }, expect.objectContaining({ cwd: '/remote/project' }))
+  expect(picker.dispose).toHaveBeenCalledTimes(1)
+  listDir.mockRejectedValueOnce(new Error('remote disconnected'))
+  await expect(hosts.listDirectory('rhea')).rejects.toThrow('remote disconnected')
+  expect(picker.dispose).toHaveBeenCalledTimes(2)
+})
+
+it('rejects invalid remote homes and unsafe folder names before helper or mkdir execution', async () => {
+  const { hosts, runner } = await fixture()
+  const scanned = await hosts.scan(spec)
+  await hosts.confirm(scanned.confirmation, scanned.fingerprint)
+  vi.mocked(runner).mockResolvedValue('relative')
+  picker.create.mockClear()
+  await expect(hosts.listDirectory('rhea', '/safe')).rejects.toThrow('invalid remote home')
+  expect(picker.create).not.toHaveBeenCalled()
+  vi.mocked(runner).mockClear()
+  for (const name of ['', ' ', '.', '..', '../key', 'a/b', 'a\\b', 'a\nb']) await expect(hosts.createDirectory('rhea', '/safe', name)).rejects.toThrow('one nonblank segment')
+  expect(runner).not.toHaveBeenCalled()
+  vi.mocked(runner).mockImplementation(async (_command, args) => args.at(-1)?.includes('mkdir') ? '' : args.at(-1)?.includes('new') ? '/safe/new' : '/safe')
+  expect(await hosts.createDirectory('rhea', '/safe', 'new')).toBe('/safe/new')
+  expect(vi.mocked(runner).mock.calls.some(([, args]) => args.at(-1)?.includes('mkdir --'))).toBe(true)
 })
 
 it('reloads confirmed identities with private permissions and no key material in API views', async () => {

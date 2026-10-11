@@ -130,6 +130,7 @@
     { "path": "./packages/client/ui-plan" },
     { "path": "./packages/client/ui-settings-plugins" },
     { "path": "./packages/client/ui-settings-shell" },
+    { "path": "./packages/cuteafd/ui-hosts" },
     { "path": "./packages/client/ui-settings-agent-loop" },
     { "path": "./packages/client/ui-settings-session-log" },
     { "path": "./packages/client/ui-settings-subagent" },
