@@ -11,7 +11,7 @@ import { verifyRuntimeClosure } from './verify-runtime-closure.ts'
 import { pnpmInvocation, restoreLegacyHoists } from './executable-packaging.ts'
 import { materializeStagedLinks, deduplicateStagedWorkspacePackages } from './build-exe-for-python-sdk-staging.ts'
 import { resolveLinuxNodePtyAddon } from './executable-native-pty.ts'
-import { artifactManifestSchema, fileDigest, helperSourceProvenance, payloadFiles, SSH_HELPER_TARGETS, verifyPayload, type SshHelperTarget } from './ssh-helper/artifact.ts'
+import { artifactManifestSchema, fileDigest, helperSourceProvenance, normalizePayloadModes, payloadFiles, SSH_HELPER_TARGETS, verifyPayload, type SshHelperTarget } from './ssh-helper/artifact.ts'
 import { probeHelper } from './ssh-helper/probe.ts'
 import { verifyNativePayload } from './ssh-helper/native.ts'
 
@@ -164,6 +164,8 @@ export async function buildSshHelper(argv: string[]): Promise<void> {
     await copyLicenses(staging, product)
     const hello = await probeHelper(executable, product)
     if (hello.kind !== 'executable' || hello.executable !== executable) throw new Error('Packaged SSH helper did not report its physical executable')
+    // Portable tar clears group/other write bits; record canonical release modes, not source umask.
+    await normalizePayloadModes(product)
     const metadata = artifactManifestSchema.parse({
       format: 1, version: definition.version, target,
       ...provenance,
