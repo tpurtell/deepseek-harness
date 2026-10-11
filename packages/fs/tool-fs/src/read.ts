@@ -135,17 +135,16 @@ export function applyReadTool(ctx: Context, caps: ReadToolCaps): void {
     // Observation races fail closed because guarded mutations re-check the version in-lock.
     isConcurrencySafe: () => true,
     async execute(args, exec) {
-      const executionCtx = exec.agent?.executionCtx ?? ctx
       const input = parseReadArgs(args, caps.limit)
       // One stat: absence observation OR type check + size routing + present version.
       // A concurrent write can only make a later guarded mutation fail stale and require reread.
-      const { target, info } = await resolveRegularReadTarget(executionCtx, exec, input.filePath)
+      const { target, info } = await resolveRegularReadTarget(ctx, exec, input.filePath)
 
       // Stream when the file is large OR size is unknown, so a size-less backend
       // never buffers an arbitrarily large file.
       const chunks = info.size === undefined || info.size >= caps.streamMinSize
-        ? await executionCtx.fs.streamText(target, exec.signal)
-        : [await executionCtx.fs.readText(target, exec.signal)]
+        ? await ctx.fs.streamText(target, exec.signal)
+        : [await ctx.fs.readText(target, exec.signal)]
       const window = await buildWindow(
         chunks,
         { offset: input.offset, limit: input.limit, maxLineLength: caps.maxLineLength, maxBytes: caps.maxBytes },
@@ -153,7 +152,7 @@ export function applyReadTool(ctx: Context, caps: ReadToolCaps): void {
       )
 
       const outcome = {
-        path: executionCtx.fs.processPath(target),
+        path: ctx.fs.processPath(target),
         offset: input.offset,
         lines: window.lines,
         totalLines: window.totalLines,
@@ -161,7 +160,7 @@ export function applyReadTool(ctx: Context, caps: ReadToolCaps): void {
       // Record the present observation (a no-op when no policy plugin listens). The
       // read already succeeded; an fs/observed listener is contractually a
       // synchronous, side-effect-only recorder.
-      executionCtx.emit('fs/observed', target, { kind: 'present', version: info.version }, exec)
+      ctx.emit('fs/observed', target, { kind: 'present', version: info.version }, exec)
       return outcome
     },
     // Result-time display: a `read` card carrying the structured line window a

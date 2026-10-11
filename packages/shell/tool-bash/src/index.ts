@@ -475,7 +475,6 @@ export function apply(ctx: Context, config: Config = {}): void {
         presentationMeta: (_args, value) => ({ cwd: value.cwd }),
       },
       async execute(args: BashToolArgs, exec) {
-      const executionCtx = exec.agent?.executionCtx ?? ctx
         // Description is display metadata; workdir defaults to the caller's session.
         const standingPolicy = resolveSandboxPolicy(exec)
         validateBashArgs(args, standingPolicy?.mode)
@@ -485,9 +484,9 @@ export function apply(ctx: Context, config: Config = {}): void {
         const policy = approvedMode === undefined
           ? standingPolicy
           : { ...(standingPolicy as SandboxExecutionPolicy), mode: approvedMode }
-        const cwd = exec.agent === undefined ? undefined : await executionCtx.workingDirectory.ensure(exec.agent, exec.signal)
+        const cwd = exec.agent === undefined ? undefined : await ctx.workingDirectory.ensure(exec.agent, exec.signal)
         const workdir = resolveWorkdir(args.workdir, cwd)
-        const dshEnv = executionCtx.shellEnv.collect(exec)
+        const dshEnv = ctx.shellEnv.collect(exec)
         const request: ShellExecRequest = {
           command: args.command,
           ...workdir !== undefined ? { workdir } : {},
@@ -503,9 +502,9 @@ export function apply(ctx: Context, config: Config = {}): void {
           if (jobs === undefined) {
             throw new Error('background jobs unavailable: load @deepseek-ai/dsh-jobs and @deepseek-ai/dsh-tool-jobs')
           }
-          // The caller owns cancellation until executionCtx.jobs commits detached ownership.
+          // The caller owns cancellation until ctx.jobs commits detached ownership.
           if (exec.signal.aborted) throw toolAborted()
-          const spec = executionCtx.shell.resolve({ ...request, onExpiry: 'none' })
+          const spec = ctx.shell.resolve({ ...request, onExpiry: 'none' })
           return { kind: 'background' as const, jobId: startJob(jobs, args, exec, spec).id, cwd: spec.workdir }
         }
         // A foreground call is a job the tool waits on, so the command is
@@ -514,17 +513,17 @@ export function apply(ctx: Context, config: Config = {}): void {
         // job limit, no controller) runs the command under the deadline kill
         // instead, exactly as a composition without a registry does.
         if (jobs !== undefined && promote) {
-          const spec = executionCtx.shell.resolve({ ...request, onExpiry: 'none' })
+          const spec = ctx.shell.resolve({ ...request, onExpiry: 'none' })
           let attached: StartedJob | undefined
           try {
             attached = startJob(jobs, args, exec, spec)
           } catch (error) {
-            executionCtx.logger.warn(`bash: job registration refused, running in the foreground with the timeout kill instead: ${String(error)}`)
+            ctx.logger.warn(`bash: job registration refused, running in the foreground with the timeout kill instead: ${String(error)}`)
           }
           if (attached !== undefined) return waitOnJob(jobs, attached, exec, spec)
         }
-        const spec = executionCtx.shell.resolve({ ...request, signal: exec.signal })
-        const foreground = await executionCtx.shell.execute(spec)
+        const spec = ctx.shell.resolve({ ...request, signal: exec.signal })
+        const foreground = await ctx.shell.execute(spec)
         const result = await foreground.result()
         if (result.aborted) throw toolAborted()
         return { kind: 'foreground' as const, ...canonicalBashResult(result, spec.workdir) }
