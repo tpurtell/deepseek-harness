@@ -96,7 +96,7 @@ describe('remote execution boundary', () => {
     const fibers = [await ctx.plugin(ExecutionWorlds), await ctx.plugin(WorldFileSystem), await ctx.plugin(WorldSubprocess), await ctx.plugin(WorldSandbox), await ctx.plugin(WorldShell), await ctx.plugin(WorldPtcRuntime)]
     try {
       const { world, calls } = recordingWorld('moa')
-      const operations = [
+      const operations: (() => unknown)[] = [
         () => ctx.fs.resolve('/work'), () => ctx.fs.processPath({ targetKey: 'x', displayPath: 'x' } as never),
         () => ctx.fs.processPathFromHostPath('/secret'), () => ctx.fs.fileUrl({} as never),
         () => ctx.fs.contains({} as never, {} as never), () => ctx.fs.stat({} as never),
@@ -133,7 +133,7 @@ describe('remote execution boundary', () => {
       expect(identities).toEqual(['rhea', 'moa'])
       expect(() => ctx.executionWorlds.current()).toThrow(NoExecutionWorldError)
       ctx.executionWorlds.configure(async workspace => workspace.host === 'rhea' ? a : b)
-      const header = { version: 4, id: SessionId('remote'), createdAt: 1, cwd: '/work', cuteafd_workspace: { kind: 'cuteafd-ssh' as const, host: 'rhea', path: '/work' } }
+      const header = { version: 4, id: SessionId('remote'), createdAt: 1, isSeeded: false, cwd: '/work', cuteafd_workspace: { kind: 'cuteafd-ssh' as const, host: 'rhea', path: '/work' } }
       expect(await ctx.executionWorlds.withHeader(header, () => ctx.executionWorlds.current().host)).toBe('rhea')
     } finally { await fiber.dispose() }
   })

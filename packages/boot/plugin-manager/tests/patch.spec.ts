@@ -8,7 +8,7 @@ import { initProfile, loadOptionalPatches, type ProfileContext } from '@deepseek
 import { writePluginEnabled } from '../src/patch.ts'
 
 it('structurally removes nested providers and prevents descendant patching', () => {
-  const input = [{ id: 'group', group: true, config: [{ id: 'local', name: 'unsafe' }] }, { id: 'operator', name: 'safe' }]
+  const input = [{ id: 'group', name: 'group', group: true, config: [{ id: 'local', name: 'unsafe' }] }, { id: 'operator', name: 'safe' }]
   const warnings: string[] = []
   const result = applyEntryPatches(input, [
     { id: 'group', remove: true },
@@ -36,8 +36,8 @@ it('patches preset-local plugin IDs without touching another preset or host row'
     plugin,
   ]
   const result = applyEntryPatches(input, [{ id: 'standard', pluginPatches: [{ id: 'local', remove: true }] }], () => {})
-  expect(result[0]?.config.plugins).toEqual([])
-  expect(result[1]?.config.plugins).toEqual([plugin])
+  expect((result[0]?.config as { plugins: unknown[] }).plugins).toEqual([])
+  expect((result[1]?.config as { plugins: unknown[] }).plugins).toEqual([plugin])
   expect(result[2]).toEqual(plugin)
   expect(input[0]?.config.plugins).toEqual([plugin])
 })

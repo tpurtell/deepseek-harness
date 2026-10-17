@@ -21,7 +21,7 @@ it('boots every production browser plugin with guarded Remote capabilities and d
     expect(client.ctx.get('remote.cuteafdHosts')).toBeDefined()
     for (const runtime of client.ctx.registry.values()) for (const fiber of runtime.fibers) {
       expect(fiber.state, `${runtime.name}: inactive plugin`).toBe(FiberState.ACTIVE)
-      for (const dependency of Object.keys(fiber.inject)) expect(fiber.ctx[dependency], `${runtime.name}: ${dependency}`).toBeDefined()
+      for (const dependency of Object.keys(fiber.inject)) expect(fiber.ctx.get(dependency), `${runtime.name}: ${dependency}`).toBeDefined()
     }
     expect(client.container?.childElementCount).toBeGreaterThan(0)
   } finally { await client.dispose() }

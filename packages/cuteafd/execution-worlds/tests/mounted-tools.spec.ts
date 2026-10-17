@@ -25,6 +25,12 @@ class RecordingRemoteFs extends FileSystem {
   override processPath(target: FsTarget) { this.calls.push('processPath'); return target.displayPath }
   override fileUrl(target: FsTarget) { return `file://${target.displayPath}` }
   override async stat() { this.calls.push('stat'); return { type: 'file' as const, size: this.content.length, version: FsVersion('v1') } }
+  override contains(parent: FsTarget, child: FsTarget) { return child.displayPath.startsWith(parent.displayPath + '/') }
+  override async lstat() { throw new Error('unused lstat') }
+  override async streamText() { throw new Error('unused streamText') }
+  override async readBytes() { throw new Error('unused readBytes') }
+  override async readByteRange() { throw new Error('unused readByteRange') }
+  override async listDir() { return [] }
   override async readText() { this.calls.push('readText'); return this.content }
   override async writeText(_target: FsTarget, content: string) {
     this.calls.push('writeText')
@@ -45,7 +51,7 @@ class RecordingRemoteShell extends ShellExecutor {
   override get sandboxMode() { return 'read-only' as const }
   override resolve(request: ShellExecRequest): ShellExecSpec {
     this.calls.push('resolve')
-    return { command: request.command, workdir: '/work', stdoutMaxBytes: 1000, timeoutMs: 1000, onExpiry: 'kill', signal: request.signal }
+    return { command: request.command, workdir: '/work', stdoutMaxBytes: 1000, timeoutMs: 1000, onExpiry: 'kill', signal: request.signal, sandboxPolicy: request.sandboxPolicy }
   }
   override async execute(spec: ShellExecSpec) {
     this.calls.push(spec.command)
@@ -61,11 +67,13 @@ class RecordingRemoteShell extends ShellExecutor {
 class RecordingRemoteSubprocess extends SubprocessRuntime {
   readonly commands: string[][] = []
   override async resolveExecutable(command: string) { return `/remote/${command}` }
+  override async terminalEnvironment(): Promise<never> { throw new Error('unused terminalEnvironment') }
+  override async spawnTerminal(): Promise<never> { throw new Error('unused spawnTerminal') }
   override spawn(spec: Parameters<SubprocessRuntime['spawn']>[0]) {
-    this.commands.push(spec.argv)
+    this.commands.push([...spec.argv])
     const reader = { readFrom: (fromByte: number) => ({ text: '', nextOffset: fromByte, lossy: false }) }
     return { readOutput: () => ({ delta: '', lossy: false }), observed: { stdout: reader, stderr: reader }, collected: { stdout: reader, stderr: reader }, terminate: () => false,
-      done: Promise.resolve({ exitCode: 1, signal: null, aborted: false, stdout: { text: '', truncated: false }, stderr: { text: '', truncated: false } }) } as ReturnType<SubprocessRuntime['spawn']>
+      done: Promise.resolve({ exitCode: 1, signal: null, aborted: false, stdout: { text: '', truncated: false }, stderr: { text: '', truncated: false } }) } as unknown as ReturnType<SubprocessRuntime['spawn']>
   }
 }
 
