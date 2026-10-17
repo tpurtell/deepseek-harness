@@ -78,7 +78,7 @@ export interface CreateAgentOptions {
    */
   readonly meta?: {
     readonly cwd?: string
-    readonly cuteafd_workspace?: SessionHeader['cuteafd_workspace']
+    readonly cuteafd_workspace?: NonNullable<SessionHeader['cuteafd_workspace']>
     readonly parentSession?: SessionId
     readonly isSeeded?: boolean
     readonly origin?: 'subagent'
