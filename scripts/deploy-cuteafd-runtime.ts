@@ -1,6 +1,6 @@
 import { spawnSync } from 'node:child_process'
 import { copyFile, mkdir, readFile, rm } from 'node:fs/promises'
-import { createRequire } from 'node:module'
+import { fileURLToPath } from 'node:url'
 import { join, resolve } from 'node:path'
 import { parseArgs } from 'node:util'
 import { pnpmInvocation, restoreLegacyHoists } from './executable-packaging.ts'
@@ -33,10 +33,8 @@ await mkdir(output, { recursive: true })
 await copyFile(join(root, 'LICENSE'), join(output, 'LICENSE'))
 
 // Legacy deployment re-resolves ranges; require the exact tested replay backend and patches.
-const sourceRequire = createRequire(join(root, 'packages/llm/llm-pi-ai/package.json'))
-const deployedRequire = createRequire(join(output, 'node_modules/@deepseek-ai/dsh-llm-pi-ai/package.json'))
-const sourcePi = resolve(sourceRequire.resolve('@earendil-works/pi-ai'), '../..')
-const deployedPi = resolve(deployedRequire.resolve('@earendil-works/pi-ai'), '../..')
+const sourcePi = fileURLToPath(new URL('../packages/llm/llm-pi-ai/node_modules/@earendil-works/pi-ai/', import.meta.url))
+const deployedPi = join(output, 'node_modules/@earendil-works/pi-ai')
 for (const file of ['package.json', 'dist/api/transform-messages.js', 'dist/api/openai-completions.js', 'dist/api/openai-responses-shared.js']) {
   if (!(await readFile(join(sourcePi, file))).equals(await readFile(join(deployedPi, file)))) {
     throw new Error(`runtime pi-ai differs from the tested dependency: ${file}`)
