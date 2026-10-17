@@ -39,7 +39,7 @@ it('patches preset-local plugin IDs without touching another preset or host row'
   expect((result[0]?.config as { plugins: unknown[] }).plugins).toEqual([])
   expect((result[1]?.config as { plugins: unknown[] }).plugins).toEqual([plugin])
   expect(result[2]).toEqual(plugin)
-  expect(input[0]?.config.plugins).toEqual([plugin])
+  expect((input[0] as { config: { plugins: unknown[] } }).config.plugins).toEqual([plugin])
 })
 
 const TOOL = { id: 'tool', name: 'package' }

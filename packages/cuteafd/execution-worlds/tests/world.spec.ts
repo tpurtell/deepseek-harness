@@ -133,7 +133,7 @@ describe('remote execution boundary', () => {
       expect(identities).toEqual(['rhea', 'moa'])
       expect(() => ctx.executionWorlds.current()).toThrow(NoExecutionWorldError)
       ctx.executionWorlds.configure(async workspace => workspace.host === 'rhea' ? a : b)
-      const header = { version: 4, id: SessionId('remote'), createdAt: 1, isSeeded: false, cwd: '/work', cuteafd_workspace: { kind: 'cuteafd-ssh' as const, host: 'rhea', path: '/work' } }
+      const header = { version: 4 as const, id: SessionId('remote'), createdAt: 1, isSeeded: false, cwd: '/work', cuteafd_workspace: { kind: 'cuteafd-ssh' as const, host: 'rhea', path: '/work' } }
       expect(await ctx.executionWorlds.withHeader(header, () => ctx.executionWorlds.current().host)).toBe('rhea')
     } finally { await fiber.dispose() }
   })

@@ -26,10 +26,10 @@ class RecordingRemoteFs extends FileSystem {
   override fileUrl(target: FsTarget) { return `file://${target.displayPath}` }
   override async stat() { this.calls.push('stat'); return { type: 'file' as const, size: this.content.length, version: FsVersion('v1') } }
   override contains(parent: FsTarget, child: FsTarget) { return child.displayPath.startsWith(parent.displayPath + '/') }
-  override async lstat() { throw new Error('unused lstat') }
-  override async streamText() { throw new Error('unused streamText') }
-  override async readBytes() { throw new Error('unused readBytes') }
-  override async readByteRange() { throw new Error('unused readByteRange') }
+  override async lstat(): Promise<never> { throw new Error('unused lstat') }
+  override async streamText(): Promise<never> { throw new Error('unused streamText') }
+  override async readBytes(): Promise<never> { throw new Error('unused readBytes') }
+  override async readByteRange(): Promise<never> { throw new Error('unused readByteRange') }
   override async listDir() { return [] }
   override async readText() { this.calls.push('readText'); return this.content }
   override async writeText(_target: FsTarget, content: string) {
